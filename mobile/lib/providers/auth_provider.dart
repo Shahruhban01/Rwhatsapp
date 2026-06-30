@@ -1,0 +1,259 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
+  return AuthNotifier();
+});
+
+class AuthState {
+  final bool loading;
+  final String? error;
+  final String? jwt;
+  final UserModel? user;
+
+  AuthState({this.loading = false, this.error, this.jwt, this.user});
+
+  AuthState copyWith({
+    bool? loading,
+    String? error,
+    String? jwt,
+    UserModel? user,
+  }) {
+    return AuthState(
+      loading: loading ?? this.loading,
+      error: error,
+      jwt: jwt ?? this.jwt,
+      user: user ?? this.user,
+    );
+  }
+}
+
+class UserModel {
+  final String userId;
+  final String username;
+  final String name;
+  final String about;
+  final String? profilePhotoUrl;
+
+  UserModel({
+    required this.userId,
+    required this.username,
+    required this.name,
+    required this.about,
+    this.profilePhotoUrl,
+  });
+
+  factory UserModel.fromJson(Map<String, dynamic> json) {
+    return UserModel(
+      userId: json['userId'] ?? '',
+      username: json['username'] ?? '',
+      name: json['name'] ?? '',
+      about: json['about'] ?? '',
+      profilePhotoUrl: json['profilePhotoUrl'],
+    );
+  }
+
+  UserModel copyWith({
+    String? username,
+    String? name,
+    String? about,
+    String? profilePhotoUrl,
+  }) {
+    return UserModel(
+      userId: this.userId,
+      username: username ?? this.username,
+      name: name ?? this.name,
+      about: about ?? this.about,
+      profilePhotoUrl: profilePhotoUrl ?? this.profilePhotoUrl,
+    );
+  }
+}
+
+class AuthNotifier extends StateNotifier<AuthState> {
+  final Dio _dio = Dio();
+
+  AuthNotifier() : super(AuthState()) {
+    _initDio();
+    trySilentLogin();
+  }
+
+  void _initDio() {
+    final baseUrl = defaultTargetPlatform == TargetPlatform.android
+        ? 'http://10.0.2.2:5000/api'
+        : 'http://localhost:5000/api';
+    _dio.options.baseUrl = baseUrl;
+    _dio.options.connectTimeout = const Duration(seconds: 5);
+    _dio.options.receiveTimeout = const Duration(seconds: 5);
+
+    // Request interceptor to attach JWT
+    _dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, handler) async {
+        final prefs = await SharedPreferences.getInstance();
+        final token = prefs.getString('jwt');
+        if (token != null) {
+          options.headers['Authorization'] = 'Bearer $token';
+        }
+        return handler.next(options);
+      },
+      onError: (e, handler) async {
+        // If 401 Unauthorized, try to refresh token
+        if (e.response?.statusCode == 401) {
+          final prefs = await SharedPreferences.getInstance();
+          final refreshToken = prefs.getString('refreshToken');
+          if (refreshToken != null) {
+            try {
+              final refreshDio = Dio(BaseOptions(baseUrl: baseUrl));
+              final res = await refreshDio.post('/auth/refresh', data: {
+                'refreshToken': refreshToken,
+              });
+              final newJwt = res.data['jwt'];
+              await prefs.setString('jwt', newJwt);
+
+              // Retry original request with new JWT
+              e.requestOptions.headers['Authorization'] = 'Bearer $newJwt';
+              final response = await _dio.fetch(e.requestOptions);
+              return handler.resolve(response);
+            } catch (err) {
+              // Refresh failed, logout
+              await logout();
+            }
+          }
+        }
+        return handler.next(e);
+      },
+    ));
+  }
+
+  Future<void> trySilentLogin() async {
+    state = state.copyWith(loading: true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final refreshToken = prefs.getString('refreshToken');
+
+      if (refreshToken == null) {
+        state = state.copyWith(loading: false);
+        return;
+      }
+
+      // Hit refresh to get active JWT
+      final res = await _dio.post('/auth/refresh', data: {'refreshToken': refreshToken});
+      final jwtToken = res.data['jwt'];
+      await prefs.setString('jwt', jwtToken);
+
+      // Load profile details
+      final profileRes = await _dio.get('/profile');
+      final userModel = UserModel.fromJson(profileRes.data);
+
+      state = AuthState(jwt: jwtToken, user: userModel, loading: false);
+    } catch (e) {
+      print('Silent login failed: $e');
+      state = state.copyWith(loading: false);
+    }
+  }
+
+  Future<void> loginWithAccessKey(String accessKey) async {
+    state = state.copyWith(loading: true);
+    try {
+      final deviceName = defaultTargetPlatform == TargetPlatform.android ? 'Android Phone' : 'iOS Device';
+      final platform = defaultTargetPlatform == TargetPlatform.android ? 'android' : 'ios';
+
+      final res = await _dio.post('/auth/access-key', data: {
+        'accessKey': accessKey,
+        'deviceName': deviceName,
+        'platform': platform,
+      });
+
+      final jwtToken = res.data['jwt'];
+      final refreshToken = res.data['refreshToken'];
+      final userJson = res.data['user'];
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('jwt', jwtToken);
+      await prefs.setString('refreshToken', refreshToken);
+
+      state = AuthState(
+        jwt: jwtToken,
+        user: UserModel.fromJson(userJson),
+        loading: false,
+      );
+    } on DioException catch (e) {
+      final errMsg = e.response?.data['error'] ?? 'Login failed';
+      state = state.copyWith(loading: false, error: errMsg);
+      throw errMsg;
+    } catch (e) {
+      state = state.copyWith(loading: false, error: e.toString());
+      throw e.toString();
+    }
+  }
+
+  Future<void> logout() async {
+    try {
+      await _dio.post('/auth/logout');
+    } catch (e) {
+      print('Server logout error: $e');
+    } finally {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('jwt');
+      await prefs.remove('refreshToken');
+      state = AuthState();
+    }
+  }
+
+  Future<bool> checkUsernameAvailable(String username) async {
+    try {
+      final res = await _dio.post('/profile/username/check', data: {'username': username});
+      return res.data['available'] ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<void> reserveUsername(String username) async {
+    state = state.copyWith(loading: true);
+    try {
+      final res = await _dio.post('/profile/username/reserve', data: {'username': username});
+      if (res.statusCode == 200 && state.user != null) {
+        state = state.copyWith(
+          user: state.user!.copyWith(username: username),
+          loading: false,
+        );
+      }
+    } on DioException catch (e) {
+      final errMsg = e.response?.data['error'] ?? 'Failed to claim username';
+      state = state.copyWith(loading: false, error: errMsg);
+      throw errMsg;
+    } catch (e) {
+      state = state.copyWith(loading: false, error: e.toString());
+      throw e.toString();
+    }
+  }
+
+  Future<void> scanQrCode(String qrSessionId) async {
+    try {
+      await _dio.post('/auth/qr/scan', data: {'qrSessionId': qrSessionId});
+    } on DioException catch (e) {
+      throw e.response?.data['error'] ?? 'Failed to scan QR';
+    } catch (e) {
+      throw e.toString();
+    }
+  }
+
+  Future<void> confirmQrLogin(String qrSessionId) async {
+    try {
+      final deviceName = defaultTargetPlatform == TargetPlatform.android ? 'Android Phone' : 'iOS Device';
+      final platform = defaultTargetPlatform == TargetPlatform.android ? 'android' : 'ios';
+
+      await _dio.post('/auth/qr/confirm', data: {
+        'qrSessionId': qrSessionId,
+        'deviceName': deviceName,
+        'platform': platform,
+      });
+    } on DioException catch (e) {
+      throw e.response?.data['error'] ?? 'Failed to confirm QR login';
+    } catch (e) {
+      throw e.toString();
+    }
+  }
+}
