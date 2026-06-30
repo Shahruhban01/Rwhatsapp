@@ -196,7 +196,14 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const res = await axios.post(`${API_URL}/chats`, { recipientUsername: username });
       const newChat = res.data as Chat;
       
-      // Update local state and select chat
+      // Immediately add the chat to state so activeChat is non-null
+      // Even though the Firestore listener will also add it eventually
+      setChats(prev => {
+        const exists = prev.find(c => c.chatId === newChat.chatId);
+        if (exists) return prev;
+        return [newChat, ...prev];
+      });
+      
       setActiveChatId(newChat.chatId);
       return newChat.chatId;
     } catch (err: any) {

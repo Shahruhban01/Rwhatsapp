@@ -157,6 +157,32 @@ class MessageModel {
   }
 }
 
+class UserRecord {
+  final String userId;
+  final String username;
+  final String name;
+  final String? profilePhotoUrl;
+  final String about;
+
+  UserRecord({
+    required this.userId,
+    required this.username,
+    required this.name,
+    this.profilePhotoUrl,
+    this.about = '',
+  });
+
+  factory UserRecord.fromJson(Map<String, dynamic> json) {
+    return UserRecord(
+      userId: json['userId'] ?? '',
+      username: json['username'] ?? '',
+      name: json['name'] ?? '',
+      profilePhotoUrl: json['profilePhotoUrl'],
+      about: json['about'] ?? '',
+    );
+  }
+}
+
 class ChatNotifier extends StateNotifier<ChatState> {
   final AuthState _authState;
   final Dio _dio = Dio();
@@ -275,6 +301,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
       print('Messages listener error: $err');
       state = state.copyWith(loadingMessages: false, error: err.toString());
     });
+  }
+
+  Future<List<UserRecord>> fetchUsers({String search = ''}) async {
+    try {
+      final params = search.isNotEmpty ? {'search': search} : null;
+      final res = await _dio.get('/users', queryParameters: params);
+      return (res.data as List).map((u) => UserRecord.fromJson(u as Map<String, dynamic>)).toList();
+    } on DioException catch (e) {
+      throw e.response?.data['error'] ?? 'Failed to fetch users';
+    }
   }
 
   Future<String> startChatWithUser(String username) async {
