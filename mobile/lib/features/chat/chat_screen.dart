@@ -77,10 +77,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       FirebaseDatabase.instance.ref('typing/${widget.chatId}/${myUser.userId}').remove();
     }
 
-    await ref.read(chatProvider.notifier).sendTextMessage(text);
-    
-    // Scroll down
-    Timer(const Duration(milliseconds: 100), _scrollToBottom);
+    try {
+      await ref.read(chatProvider.notifier).sendTextMessage(text);
+      Timer(const Duration(milliseconds: 100), _scrollToBottom);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString()), backgroundColor: Colors.redAccent),
+        );
+      }
+    }
   }
 
   String _formatTime(DateTime time) {

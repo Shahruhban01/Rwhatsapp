@@ -340,7 +340,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
         'content': text,
       });
     } on DioException catch (e) {
-      print('Send text message error: $e');
+      final errMsg = e.response?.data['error'] ?? 'Failed to send message';
+      state = state.copyWith(error: errMsg);
+      throw errMsg;
     }
   }
 

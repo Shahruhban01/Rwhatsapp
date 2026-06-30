@@ -104,7 +104,9 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
 
     await db.collection('chats').doc(chatId).set(newChat);
 
-    return res.status(201).json(newChat);
+    // Read back to get resolved server timestamps instead of FieldValue sentinels
+    const createdDoc = await db.collection('chats').doc(chatId).get();
+    return res.status(201).json({ chatId: createdDoc.id, ...createdDoc.data() });
   } catch (err) {
     console.error('Error starting chat:', err);
     return res.status(500).json({ error: 'Internal server error starting chat' });

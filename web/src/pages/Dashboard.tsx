@@ -134,11 +134,12 @@ const Dashboard: React.FC = () => {
   // Helpers
   const formatTime = (ts: any) => {
     if (!ts) return "";
-    let d: Date;
-    if (ts.toDate) d = ts.toDate();
-    else if (ts.seconds) d = new Date(ts.seconds * 1000);
-    else d = new Date(ts);
-    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    try {
+      let d: Date;
+      if (ts.toDate) { d = ts.toDate(); } else if (ts.seconds != null) { d = new Date(ts.seconds * 1000); } else if (typeof ts === "string" || typeof ts === "number") { d = new Date(ts); } else { return ""; }
+      if (isNaN(d.getTime())) return "";
+      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    } catch { return ""; }
   };
 
   const getPresenceText = () => {
