@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
 import { ref, onValue, off } from 'firebase/database';
-import { rtdb } from '../services/firebase';
+import { rtdb, auth } from '../services/firebase';
+import { signInWithCustomToken } from 'firebase/auth';
 
 const API_URL = 'http://localhost:5000/api';
 
@@ -49,7 +50,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const res = await axios.post(`${API_URL}/auth/refresh`, {
           refreshToken: storedRefreshToken,
         });
-        const { jwt: newJwt } = res.data;
+        const { jwt: newJwt, firebaseToken } = res.data;
+        
+        if (firebaseToken) {
+          await signInWithCustomToken(auth, firebaseToken);
+        }
+        
         setJwt(newJwt);
         localStorage.setItem('jwt', newJwt);
 

@@ -68,6 +68,12 @@ interface ChatContextType {
   sendTextMessage: (text: string, replyTo?: any) => Promise<void>;
   sendMediaMessage: (type: 'image' | 'video' | 'audio' | 'voice_note' | 'document' | 'gif' | 'sticker', mediaUrl: string, options?: Partial<Message>) => Promise<void>;
   markActiveChatAsRead: () => Promise<void>;
+  editMessage: (messageId: string, content: string) => Promise<void>;
+  deleteMessage: (messageId: string, mode: 'me' | 'everyone') => Promise<void>;
+  reactToMessage: (messageId: string, reaction: string) => Promise<void>;
+  togglePinMessage: (messageId: string) => Promise<void>;
+  clearChatHistory: (chatId: string) => Promise<void>;
+  deleteChat: (chatId: string) => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -169,7 +175,11 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const unsubscribe = onSnapshot(messagesQuery, (snapshot) => {
       const messagesList: Message[] = [];
       snapshot.forEach((doc) => {
-        messagesList.push({ messageId: doc.id, ...doc.data() } as Message);
+        const data = doc.data() as any;
+        if (data.deletedForUsers && data.deletedForUsers.includes(user.userId)) {
+          return;
+        }
+        messagesList.push({ messageId: doc.id, ...data } as Message);
       });
       setMessages(messagesList);
       setLoadingMessages(false);
@@ -262,6 +272,71 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // 7. Edit message
+  const editMessage = async (messageId: string, content: string) => {
+    if (!activeChatId) return;
+    try {
+      await axios.put(`${API_URL}/chats/${activeChatId}/messages/${messageId}`, { content });
+    } catch (err: any) {
+      console.error('Failed to edit message:', err);
+      setError(err.response?.data?.error || 'Failed to edit message');
+    }
+  };
+
+  // 8. Delete message
+  const deleteMessage = async (messageId: string, mode: 'me' | 'everyone') => {
+    if (!activeChatId) return;
+    try {
+      await axios.delete(`${API_URL}/chats/${activeChatId}/messages/${messageId}`, {
+        params: { mode }
+      });
+    } catch (err: any) {
+      console.error('Failed to delete message:', err);
+      setError(err.response?.data?.error || 'Failed to delete message');
+    }
+  };
+
+  // 9. React to message
+  const reactToMessage = async (messageId: string, reaction: string) => {
+    if (!activeChatId) return;
+    try {
+      await axios.post(`${API_URL}/chats/${activeChatId}/messages/${messageId}/react`, { reaction });
+    } catch (err: any) {
+      console.error('Failed to react to message:', err);
+    }
+  };
+
+  // 10. Pin message
+  const togglePinMessage = async (messageId: string) => {
+    if (!activeChatId) return;
+    try {
+      await axios.post(`${API_URL}/chats/${activeChatId}/messages/${messageId}/pin`);
+    } catch (err: any) {
+      console.error('Failed to pin message:', err);
+    }
+  };
+
+  // 11. Clear chat history
+  const clearChatHistory = async (chatId: string) => {
+    try {
+      await axios.post(`${API_URL}/chats/${chatId}/clear`);
+    } catch (err: any) {
+      console.error('Failed to clear chat:', err);
+    }
+  };
+
+  // 12. Delete chat
+  const deleteChat = async (chatId: string) => {
+    try {
+      await axios.delete(`${API_URL}/chats/${chatId}`);
+      if (activeChatId === chatId) {
+        setActiveChatId(null);
+      }
+    } catch (err: any) {
+      console.error('Failed to delete chat:', err);
+    }
+  };
+
   return (
     <ChatContext.Provider
       value={{
@@ -276,7 +351,13 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         startChatWithUser,
         sendTextMessage,
         sendMediaMessage,
-        markActiveChatAsRead
+        markActiveChatAsRead,
+        editMessage,
+        deleteMessage,
+        reactToMessage,
+        togglePinMessage,
+        clearChatHistory,
+        deleteChat
       }}
     >
       {children}

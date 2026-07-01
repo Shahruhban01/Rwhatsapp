@@ -161,7 +161,15 @@ router.post('/refresh', async (req: Request, res: Response) => {
       lastActiveAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    return res.status(200).json({ jwt: newJwtToken });
+    // Generate Firebase custom token
+    let firebaseToken: string | null = null;
+    try {
+      firebaseToken = await admin.auth().createCustomToken(userId);
+    } catch (e) {
+      console.warn('Could not generate Firebase custom token:', e);
+    }
+
+    return res.status(200).json({ jwt: newJwtToken, firebaseToken });
   } catch (err: any) {
     console.error('Error refreshing token:', err);
     return res.status(401).json({ error: 'Invalid or expired Refresh Token' });

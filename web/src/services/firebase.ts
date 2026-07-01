@@ -6,10 +6,10 @@ import { getAuth, connectAuthEmulator } from 'firebase/auth';
 // Use dummy config for emulator suite during development
 const firebaseConfig = {
   apiKey: "dummy-api-key-for-emulator",
-  authDomain: "whatsapp-clone-dev.firebaseapp.com",
-  databaseURL: "http://127.0.0.1:9000?ns=whatsapp-clone-dev",
-  projectId: "whatsapp-clone-dev",
-  storageBucket: "whatsapp-clone-dev.appspot.com",
+  authDomain: "ruhbans-whatsapp.firebaseapp.com",
+  databaseURL: "http://127.0.0.1:9000?ns=ruhbans-whatsapp",
+  projectId: "ruhbans-whatsapp",
+  storageBucket: "ruhbans-whatsapp.appspot.com",
   messagingSenderId: "1234567890",
   appId: "1:1234567890:web:1234567890"
 };

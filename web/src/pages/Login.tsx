@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { auth } from '../services/firebase';
+import { signInWithCustomToken } from 'firebase/auth';
 import {
   QrCode, Key, ArrowRight, ShieldCheck, Laptop,
   Lock, RefreshCw, UserPlus, LogIn, ChevronLeft, User
@@ -125,7 +127,7 @@ const Login: React.FC = () => {
     e.preventDefault(); clearError();
     const errs: Record<string, string> = {};
     if (!regUsername.trim() || !/^[a-z0-9_]{3,20}$/.test(regUsername.toLowerCase()))
-      errs.username = 'Username: 3�20 chars, lowercase letters, numbers, underscores only';
+      errs.username = 'Username: 3–20 chars, lowercase letters, numbers, underscores only';
     const p = pinStr(regPin); const pc = pinStr(regPinConfirm);
     if (p.length !== 4) errs.pin = 'Enter all 4 PIN digits';
     else if (p !== pc) errs.pinConfirm = 'PINs do not match';
@@ -140,7 +142,8 @@ const Login: React.FC = () => {
         deviceName: navigator.userAgent.includes('Mobile') ? 'Mobile Browser' : 'Web Browser',
         platform: 'web',
       });
-      const { jwt, refreshToken, user: loggedUser } = res.data;
+      const { jwt, refreshToken, firebaseToken, user: loggedUser } = res.data;
+      if (firebaseToken) { await signInWithCustomToken(auth, firebaseToken); }
       localStorage.setItem('jwt', jwt);
       localStorage.setItem('refreshToken', refreshToken);
       setUserProfile(loggedUser);
@@ -166,7 +169,8 @@ const Login: React.FC = () => {
         deviceName: navigator.userAgent.includes('Mobile') ? 'Mobile Browser' : 'Web Browser',
         platform: 'web',
       });
-      const { jwt, refreshToken, user: loggedUser } = res.data;
+      const { jwt, refreshToken, firebaseToken, user: loggedUser } = res.data;
+      if (firebaseToken) { await signInWithCustomToken(auth, firebaseToken); }
       localStorage.setItem('jwt', jwt);
       localStorage.setItem('refreshToken', refreshToken);
       setUserProfile(loggedUser);
@@ -488,3 +492,4 @@ const Login: React.FC = () => {
 };
 
 export default Login;
+
