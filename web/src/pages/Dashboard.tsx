@@ -7,12 +7,14 @@ import axios from "axios";
 import {
   LogOut, Search, Send, User, Check, CheckCheck, Smile, Paperclip,
   Phone, Video, MoreVertical, MessageSquarePlus, ArrowLeft, X, Settings, Users, CircleDot,
-  Reply as ReplyIcon, Trash2, Edit2, Pin, Star, CornerDownRight, Volume2, FileText, Loader2
+  Reply as ReplyIcon, Trash2, Edit2, Pin, Star, CornerDownRight, Volume2, FileText, Loader2, Mic, Info,
+  Archive, Download, Palette
 } from "lucide-react";
 import SettingsModal from "../components/SettingsModal";
 import CreateGroupModal from "../components/CreateGroupModal";
 import GroupInfoModal from "../components/GroupInfoModal";
 import StoriesPanel from "../components/StoriesPanel";
+import ContactInfoModal from "../components/ContactInfoModal";
 
 const API_URL = "http://localhost:5000/api";
 
@@ -24,13 +26,36 @@ interface UserRecord {
   about: string;
 }
 
+const EMOJIS = [
+  "😀","😃","😄","😁","😆","😅","😂","🤣","😊","😇","🙂","🙃","😉","😌","😍","🥰","😘",
+  "😗","😙","😚","😋","😛","😝","😜","🤪","🤨","🧐","🤓","😎","🤩","🥳","😏","😒","😞",
+  "😔","😟","😕","🙁","☹️","😣","😖","😫","😩","🥺","😢","😭","😤","😠","😡","🤬","🤯",
+  "😳","🥵","🥶","😱","😨","😰","😥","😓","🤗","🤔","🤭","🤫","🤥","😶","😐","😑","😬",
+  "🙄","😯","😦","😧","😮","😲","🥱","😴","🤤","😪","😵","🤐","🥴","🤢","🤮","🤧","😷",
+  "🤒","🤕","🤑","🤠","😈","👿","👹","👺","🤡","💩","👻","💀","☠️","👽","👾","🤖","🎃",
+  "😺","😸","😹","😻","😼","😽","🙀","😿","😾","👋","🤚","🖐️","✋","🖖","👌","🤏","✌️",
+  "🤞","🤟","🤘","🤙","👈","👉","👆","🖕","👇","☝️","👍","👎","✊","👊","🤛","🤜","👏",
+  "🙌","👐","🤲","🤝","🙏","✍️","💅","🤳","💪","🦾","🦿","🦵","🦶","👂","🦻","👃","🧠",
+  "🦷","🦴","👀","👁️","👅","👄","💋","🩸","❤️","🧡","💛","💚","💙","💜","🖤","🤍","🤎",
+  "💔","❣️","💕","💞","💓","💗","💖","💘","💝","💟"
+];
+
+const WALLPAPERS = [
+  { name: "Default Dark", value: "#0b141a" },
+  { name: "Teal Green", value: "#052e24" },
+  { name: "Navy Blue", value: "#0a192f" },
+  { name: "Deep Maroon", value: "#2d0b13" },
+  { name: "Plum Purple", value: "#1e0b29" },
+  { name: "Charcoal", value: "#1a1a1a" }
+];
+
 const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
   const {
     chats, activeChatId, activeChat, messages,
     selectChat, startChatWithUser, sendTextMessage, sendMediaMessage,
     editMessage, deleteMessage, reactToMessage, togglePinMessage,
-    clearChatHistory, deleteChat
+    clearChatHistory, deleteChat, toggleStarMessage, updateChatSettings
   } = useChats();
 
   const [inputText, setInputText] = useState("");
@@ -51,9 +76,14 @@ const Dashboard: React.FC = () => {
   // Chat options dropdown (Clear, Delete, Pin, Mute)
   const [showChatMenu, setShowChatMenu] = useState(false);
 
-  // Mute / Pin active status tracking
-  const [mutedChats, setMutedChats] = useState<Record<string, boolean>>({});
-  const [pinnedChats, setPinnedChats] = useState<Record<string, boolean>>({});
+  // Wallpaper selection menu
+  const [showWallpaperMenu, setShowWallpaperMenu] = useState(false);
+
+  // Mute options modal
+  const [showMuteModal, setShowMuteModal] = useState<string | null>(null);
+
+  // Archive Filter Sidebar Toggle
+  const [showArchivedFilter, setShowArchivedFilter] = useState(false);
 
   // Message operational states
   const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
@@ -64,6 +94,45 @@ const Dashboard: React.FC = () => {
 
   // Media uploading state
   const [mediaUploading, setMediaUploading] = useState(false);
+
+  // Voice recording states
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<any>(null);
+
+  // Custom Sidebar Right-click Context Menu
+  const [sidebarMenu, setSidebarMenu] = useState<{ x: number; y: number; chatId: string } | null>(null);
+
+  // Contact Info Viewer states
+  const [showContactInfo, setShowContactInfo] = useState(false);
+  const [contactInfoData, setContactInfoData] = useState<{
+    userId: string;
+    name: string;
+    username: string;
+    profilePhotoUrl: string | null;
+  } | null>(null);
+
+  // Emoji Picker State
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+
+  // Multi-select Messages Mode
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedMsgIds, setSelectedMsgIds] = useState<string[]>([]);
+
+  // Group @Mentions suggest list
+  const [groupMembers, setGroupMembers] = useState<UserRecord[]>([]);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [showMentionSuggest, setShowMentionSuggest] = useState(false);
+
+  // Active chat search keyword
+  const [chatSearchOpen, setChatSearchOpen] = useState(false);
+  const [chatSearchQuery, setChatSearchQuery] = useState("");
+
+  // Global messages search results
+  const [globalMessageResults, setGlobalMessageResults] = useState<any[]>([]);
+  const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
 
   // Sidebar search
   const [sidebarSearch, setSidebarSearch] = useState("");
@@ -77,6 +146,7 @@ const Dashboard: React.FC = () => {
   const searchDebounceRef = useRef<any>(null);
   const chatMenuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
 
   const recipientId = activeChat?.participantIds.find(id => id !== user?.userId) || null;
 
@@ -85,12 +155,16 @@ const Dashboard: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Click outside chat menu closer
+  // Click outside selectors closer
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
       if (chatMenuRef.current && !chatMenuRef.current.contains(e.target as Node)) {
         setShowChatMenu(false);
       }
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+      setSidebarMenu(null);
     };
     document.addEventListener("mousedown", handleOutsideClick);
     return () => document.removeEventListener("mousedown", handleOutsideClick);
@@ -118,15 +192,66 @@ const Dashboard: React.FC = () => {
     return () => { unsub1(); unsub2(); };
   }, [recipientId, activeChatId]);
 
-  // Handle typing status
+  // Fetch active chat group members for suggestions
+  useEffect(() => {
+    if (activeChat && activeChat.type === 'group') {
+      axios.get(`${API_URL}/chats/${activeChat.chatId}/members`)
+        .then(res => setGroupMembers(res.data))
+        .catch(err => console.error(err));
+    } else {
+      setGroupMembers([]);
+    }
+    setChatSearchOpen(false);
+    setChatSearchQuery("");
+  }, [activeChat]);
+
+  // Listen to input changes for group mentions triggers
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setInputText(e.target.value);
+    const val = e.target.value;
+    setInputText(val);
     if (!user || !activeChatId) return;
+
+    // Presence typing notify
     const myTypingRef = ref(rtdb, `typing/${activeChatId}/${user.userId}`);
     set(myTypingRef, { isTyping: true, startedAt: Date.now() });
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => remove(myTypingRef), 2000);
+
+    // Mentions parsing
+    if (activeChat?.type === 'group') {
+      const match = val.match(/@(\w*)$/);
+      if (match) {
+        setMentionQuery(match[1]);
+        setShowMentionSuggest(true);
+      } else {
+        setShowMentionSuggest(false);
+        setMentionQuery(null);
+      }
+    }
   };
+
+  // Perform Global Message Search debounced
+  useEffect(() => {
+    if (!sidebarSearch.trim()) {
+      setGlobalMessageResults([]);
+      return;
+    }
+    setGlobalSearchLoading(true);
+    const searchTimer = setTimeout(async () => {
+      try {
+        const res = await axios.get(`${API_URL}/chats/search-messages`, {
+          params: { query: sidebarSearch }
+        });
+        setGlobalMessageResults(res.data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setGlobalSearchLoading(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(searchTimer);
+  }, [sidebarSearch]);
 
   // List users for new chat slide-over
   const fetchUsers = useCallback(async (q = "") => {
@@ -211,6 +336,105 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  // Voice recording triggers
+  const handleStartRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach(track => track.stop());
+
+        if (audioChunksRef.current.length === 0) return;
+
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+        const file = new File([audioBlob], 'voice-note.wav', { type: 'audio/wav' });
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        setMediaUploading(true);
+        try {
+          const res = await axios.post(`${API_URL}/storage/upload`, formData, {
+            headers: { "Content-Type": "multipart/form-data" }
+          });
+          const { url, fileSize } = res.data;
+          await sendMediaMessage('audio', url, {
+            mediaName: 'Voice Note.wav',
+            mediaSize: fileSize,
+            content: 'Voice Note'
+          });
+        } catch (err) {
+          console.error("Failed to upload voice note:", err);
+          alert("Failed to send voice note.");
+        } finally {
+          setMediaUploading(false);
+        }
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingDuration(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration(prev => prev + 1);
+      }, 1000);
+    } catch (err) {
+      console.error("Error accessing microphone:", err);
+      alert("Microphone access is required to record voice notes.");
+    }
+  };
+
+  const handleStopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      clearInterval(recordingTimerRef.current);
+    }
+  };
+
+  const handleCancelRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      audioChunksRef.current = [];
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      clearInterval(recordingTimerRef.current);
+    }
+  };
+
+  const formatDuration = (sec: number) => {
+    const mins = Math.floor(sec / 60);
+    const secs = sec % 60;
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
+
+  const formatTime = (ts: any) => {
+    if (!ts) return "";
+    let d: Date;
+    if (ts.toDate) d = ts.toDate();
+    else if (ts.seconds) d = new Date(ts.seconds * 1000);
+    else d = new Date(ts);
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  };
+
+  const getPresenceText = () => {
+    if (recipientTyping) return "typing...";
+    if (!recipientPresence) return "offline";
+    if (recipientPresence.state === "online") return "online";
+    if (recipientPresence.lastSeen) {
+      return `last seen at ${new Date(recipientPresence.lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    }
+    return "offline";
+  };
+
   // Start chat with a user
   const handleStartChat = async (username: string) => {
     setStartingChat(username);
@@ -235,16 +459,43 @@ const Dashboard: React.FC = () => {
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
-  // Toggle Chat Pin status
-  const handleTogglePinChat = (chatId: string) => {
-    setPinnedChats(prev => ({ ...prev, [chatId]: !prev[chatId] }));
+  // Toggle Chat Pin status in Firestore
+  const handleTogglePinChat = async (chatId: string, currentPinStatus: boolean) => {
+    await updateChatSettings(chatId, { isPinned: !currentPinStatus });
     setShowChatMenu(false);
   };
 
-  // Toggle Chat Mute status
+  // Trigger Mute settings modal
   const handleToggleMuteChat = (chatId: string) => {
-    setMutedChats(prev => ({ ...prev, [chatId]: !prev[chatId] }));
+    setShowMuteModal(chatId);
     setShowChatMenu(false);
+  };
+
+  const submitMuteChoice = async (choice: '8h' | '1w' | 'always') => {
+    if (!showMuteModal) return;
+    let muteUntil = null;
+    if (choice === '8h') muteUntil = Date.now() + 8 * 60 * 60 * 1000;
+    else if (choice === '1w') muteUntil = Date.now() + 7 * 24 * 60 * 60 * 1000;
+    else muteUntil = 4102444800000; // Year 2100 representation
+
+    await updateChatSettings(showMuteModal, { isMuted: true, muteUntil });
+    setShowMuteModal(null);
+  };
+
+  const handleUnmuteChat = async (chatId: string) => {
+    await updateChatSettings(chatId, { isMuted: false, muteUntil: null });
+  };
+
+  // Toggle Chat Archive status in Firestore
+  const handleToggleArchiveChat = async (chatId: string, currentArchiveStatus: boolean) => {
+    await updateChatSettings(chatId, { isArchived: !currentArchiveStatus });
+    setSidebarMenu(null);
+  };
+
+  // Set Custom Wallpaper
+  const handleWallpaperSelect = async (chatId: string, value: string) => {
+    await updateChatSettings(chatId, { wallpaper: value });
+    setShowWallpaperMenu(false);
   };
 
   // Clear Chat History wrapper
@@ -263,32 +514,100 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // Helpers
-  const formatTime = (ts: any) => {
-    if (!ts) return "";
-    let d: Date;
-    if (ts.toDate) d = ts.toDate();
-    else if (ts.seconds) d = new Date(ts.seconds * 1000);
-    else d = new Date(ts);
-    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  // Sidebar item context menu trigger
+  const handleSidebarContextMenu = (e: React.MouseEvent, chatId: string) => {
+    e.preventDefault();
+    setSidebarMenu({ x: e.clientX, y: e.clientY, chatId });
   };
 
-  const getPresenceText = () => {
-    if (recipientTyping) return "typing...";
-    if (!recipientPresence || recipientPresence.state !== "online") {
-      if (recipientPresence?.lastSeen) {
-        return `last seen at ${new Date(recipientPresence.lastSeen).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
-      }
-      return "offline";
+  const handleOpenContactInfo = (chat: any) => {
+    if (chat.type === 'group') {
+      setShowGroupInfo(true);
+    } else {
+      const rId = chat.participantIds.find((id: string) => id !== user?.userId) || '';
+      setContactInfoData({
+        userId: rId,
+        name: chat.metadata?.recipientName || '',
+        username: chat.metadata?.recipientUsername || '',
+        profilePhotoUrl: chat.metadata?.recipientPhotoUrl || null
+      });
+      setShowContactInfo(true);
     }
-    return "online";
   };
 
-  const Avatar = ({ name, size = "md", photo }: { name: string; size?: "sm" | "md" | "lg"; photo?: string | null }) => {
+  // Multi-select actions
+  const handleToggleMsgSelect = (messageId: string) => {
+    if (selectedMsgIds.includes(messageId)) {
+      setSelectedMsgIds(selectedMsgIds.filter(id => id !== messageId));
+    } else {
+      setSelectedMsgIds([...selectedMsgIds, messageId]);
+    }
+  };
+
+  const handleDeleteSelectedMessages = async () => {
+    if (window.confirm(`Delete ${selectedMsgIds.length} selected message(s)?`)) {
+      for (const mid of selectedMsgIds) {
+        await deleteMessage(mid, 'me');
+      }
+      setSelectedMsgIds([]);
+      setSelectMode(false);
+    }
+  };
+
+  // Append emoji to message text input
+  const handleAddEmoji = (emoji: string) => {
+    setInputText(prev => prev + emoji);
+  };
+
+  const handleMentionSelect = (username: string) => {
+    setInputText(prev => {
+      const clean = prev.replace(/@\w*$/, `@${username} `);
+      return clean;
+    });
+    setShowMentionSuggest(false);
+  };
+
+  // Export Chat transcript log
+  const handleExportChat = () => {
+    const logText = messages.map(m => `[${formatTime(m.sentAt)}] ${m.senderId === user?.userId ? 'Me' : 'Participant'}: ${m.content}`).join('\n');
+    const blob = new Blob([logText], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Chat_Transcript_${activeChatId}.txt`;
+    a.click();
+    setShowChatMenu(false);
+  };
+
+  // Mention Highlight Render helper
+  const renderMessageText = (text: string) => {
+    const parts = text.split(/(@[a-zA-Z0-9_]+)/g);
+    return parts.map((part, idx) => {
+      if (part.startsWith('@')) {
+        return <span key={idx} className="text-[#53bdeb] font-semibold select-all">{part}</span>;
+      }
+      return part;
+    });
+  };
+
+  // Filtered active chat messages list
+  const filteredMessages = chatSearchQuery.trim()
+    ? messages.filter(m => m.content.toLowerCase().includes(chatSearchQuery.toLowerCase()))
+    : messages;
+
+  // Filter group members for mentions dropdown
+  const filteredMentionSuggests = mentionQuery !== null
+    ? groupMembers.filter(m => m.username.toLowerCase().includes(mentionQuery.toLowerCase()))
+    : groupMembers;
+
+  const Avatar = ({ name, size = "md", photo, onClick }: { name: string; size?: "sm" | "md" | "lg"; photo?: string | null; onClick?: () => void }) => {
     const sz = size === "sm" ? "w-8 h-8 text-sm" : size === "lg" ? "w-14 h-14 text-xl" : "w-10 h-10 text-base";
-    if (photo) return <img src={photo} className={`${sz} rounded-full object-cover`} alt={name} />;
+    if (photo) return <img src={photo} onClick={onClick} className={`${sz} rounded-full object-cover cursor-pointer`} alt={name} />;
     return (
-      <div className={`${sz} rounded-full bg-[#00a884] flex items-center justify-center font-bold text-white uppercase shrink-0`}>
+      <div 
+        onClick={onClick}
+        className={`${sz} rounded-full bg-[#00a884] flex items-center justify-center font-bold text-white uppercase shrink-0 cursor-pointer`}
+      >
         {name?.[0] || "U"}
       </div>
     );
@@ -296,8 +615,8 @@ const Dashboard: React.FC = () => {
 
   // Sort chats (Pinned first, then lastMessageAt)
   const sortedChats = [...chats].sort((a, b) => {
-    const aPinned = pinnedChats[a.chatId] ? 1 : 0;
-    const bPinned = pinnedChats[b.chatId] ? 1 : 0;
+    const aPinned = a.settings?.isPinned ? 1 : 0;
+    const bPinned = b.settings?.isPinned ? 1 : 0;
     if (aPinned !== bPinned) return bPinned - aPinned;
 
     const timeA = a.lastMessageAt?.toMillis ? a.lastMessageAt.toMillis() : (a.lastMessageAt?.seconds ? a.lastMessageAt.seconds * 1000 : 0);
@@ -306,12 +625,20 @@ const Dashboard: React.FC = () => {
   });
 
   // Filtered sidebar chats
-  const filteredChats = sidebarSearch.trim()
-    ? sortedChats.filter(c =>
-        c.metadata?.recipientName?.toLowerCase().includes(sidebarSearch.toLowerCase()) ||
-        c.metadata?.recipientUsername?.toLowerCase().includes(sidebarSearch.toLowerCase())
-      )
-    : sortedChats;
+  const filteredChats = sortedChats.filter(chat => {
+    // Search match check
+    const matchesSearch = sidebarSearch.trim()
+      ? chat.metadata?.recipientName?.toLowerCase().includes(sidebarSearch.toLowerCase()) ||
+        chat.metadata?.recipientUsername?.toLowerCase().includes(sidebarSearch.toLowerCase())
+      : true;
+
+    // Archive check
+    const isArchived = chat.settings?.isArchived || false;
+    if (showArchivedFilter) {
+      return isArchived && matchesSearch;
+    }
+    return !isArchived && matchesSearch;
+  });
 
   const activePinnedMessages = messages.filter(m => m.isPinned && m.type !== 'deleted');
 
@@ -327,19 +654,110 @@ const Dashboard: React.FC = () => {
         accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.zip"
       />
 
+      {/* Custom Right Click Context Menu on Sidebar Chats */}
+      {sidebarMenu && (
+        <div 
+          className="fixed bg-[#233138] border border-[#2e3b43] rounded-lg py-2 w-48 shadow-2xl z-50 text-xs select-none animate-in zoom-in-95 duration-100"
+          style={{ top: sidebarMenu.y, left: sidebarMenu.x }}
+        >
+          <button 
+            onClick={() => {
+              const targetChat = chats.find(c => c.chatId === sidebarMenu.chatId);
+              if (targetChat) handleOpenContactInfo(targetChat);
+            }}
+            className="w-full text-left px-4 py-2 hover:bg-[#182229] flex items-center gap-2"
+          >
+            <Info className="w-3.5 h-3.5 text-slate-400" /> Contact Info
+          </button>
+          <button 
+            onClick={() => {
+              selectChat(sidebarMenu.chatId);
+              setChatSearchOpen(true);
+            }}
+            className="w-full text-left px-4 py-2 hover:bg-[#182229] flex items-center gap-2"
+          >
+            <Search className="w-3.5 h-3.5 text-slate-400" /> Search Chat
+          </button>
+          <button 
+            onClick={() => {
+              selectChat(sidebarMenu.chatId);
+              setSelectMode(true);
+              setSelectedMsgIds([]);
+            }}
+            className="w-full text-left px-4 py-2 hover:bg-[#182229] flex items-center gap-2"
+          >
+            <Check className="w-3.5 h-3.5 text-slate-400" /> Select Messages
+          </button>
+          <button 
+            onClick={() => {
+              const targetChat = chats.find(c => c.chatId === sidebarMenu.chatId);
+              if (targetChat) handleToggleArchiveChat(sidebarMenu.chatId, targetChat.settings?.isArchived || false);
+            }}
+            className="w-full text-left px-4 py-2 hover:bg-[#182229] flex items-center gap-2"
+          >
+            <Archive className="w-3.5 h-3.5 text-slate-400" /> {chats.find(c => c.chatId === sidebarMenu.chatId)?.settings?.isArchived ? "Unarchive Chat" : "Archive Chat"}
+          </button>
+          <button 
+            onClick={() => {
+              if (activeChatId === sidebarMenu.chatId) selectChat("");
+            }}
+            className="w-full text-left px-4 py-2 hover:bg-[#182229] flex items-center gap-2"
+          >
+            <X className="w-3.5 h-3.5 text-slate-400" /> Close Chat
+          </button>
+          <div className="border-t border-[#2e3b43] my-1" />
+          <button 
+            onClick={() => handleClearHistory(sidebarMenu.chatId)}
+            className="w-full text-left px-4 py-2 hover:bg-[#182229] text-red-400 flex items-center gap-2"
+          >
+            <Trash2 className="w-3.5 h-3.5 text-red-400" /> Clear Chat
+          </button>
+          <button 
+            onClick={() => handleDeleteChat(sidebarMenu.chatId)}
+            className="w-full text-left px-4 py-2 hover:bg-[#182229] text-red-400 flex items-center gap-2"
+          >
+            <Trash2 className="w-3.5 h-3.5 text-red-400" /> Delete Chat
+          </button>
+        </div>
+      )}
+
+      {/* Mute Choices Modal Dialog */}
+      {showMuteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-[#222e35] border border-[#2e3b43] rounded-xl p-5 w-80 shadow-2xl space-y-4">
+            <h3 className="font-bold text-sm text-[#e9edef]">Mute notifications for...</h3>
+            <div className="flex flex-col gap-2">
+              <button onClick={() => submitMuteChoice('8h')} className="w-full text-left px-3 py-2 hover:bg-[#202c33] rounded transition text-xs font-semibold">8 Hours</button>
+              <button onClick={() => submitMuteChoice('1w')} className="w-full text-left px-3 py-2 hover:bg-[#202c33] rounded transition text-xs font-semibold">1 Week</button>
+              <button onClick={() => submitMuteChoice('always')} className="w-full text-left px-3 py-2 hover:bg-[#202c33] rounded transition text-xs font-semibold">Always</button>
+            </div>
+            <div className="flex justify-end pt-2">
+              <button onClick={() => setShowMuteModal(null)} className="text-slate-400 hover:text-white text-xs font-bold uppercase">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ─── LEFT SIDEBAR ────────────────────────────────────────────────── */}
       <div className="w-[30%] min-w-[340px] max-w-[420px] border-r border-[#202c33] bg-[#111b21] flex flex-col h-full z-10">
 
         {/* Sidebar header */}
         <div className="h-[60px] bg-[#202c33] flex items-center justify-between px-4 py-2 border-b border-[#202c33]/50 shrink-0">
           <div className="flex items-center gap-3">
-            <Avatar name={user?.name || "U"} photo={null} />
+            <Avatar name={user?.name || "U"} photo={user?.profilePhotoUrl} />
             <div className="flex flex-col">
               <span className="font-semibold text-sm leading-tight">{user?.name}</span>
               <span className="text-xs text-[#00a884] font-medium">@{user?.username}</span>
             </div>
           </div>
           <div className="flex items-center gap-1">
+            <button
+              onClick={() => setShowArchivedFilter(!showArchivedFilter)}
+              title={showArchivedFilter ? "Show Active Chats" : "Show Archived Chats"}
+              className={`p-2 rounded-full transition-colors duration-200 ${showArchivedFilter ? 'bg-[#00a884]/20 text-[#00a884]' : 'text-slate-400 hover:bg-[#2a3942]'}`}
+            >
+              <Archive className="w-5 h-5" />
+            </button>
             <button
               onClick={() => setShowNewChat(true)}
               title="New chat"
@@ -387,25 +805,35 @@ const Dashboard: React.FC = () => {
 
         {/* Chat list */}
         <div className="flex-1 overflow-y-auto">
+          {showArchivedFilter && (
+            <div className="px-4 py-2 text-[10px] text-[#00a884] uppercase tracking-widest font-bold bg-[#182229]/60 shrink-0 border-b border-[#202c33]/30">
+              Archived Chats
+            </div>
+          )}
+
           {filteredChats.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center text-slate-500 px-8">
+            <div className="flex flex-col items-center justify-center h-full text-center text-slate-500 px-8 py-8">
               <User className="w-10 h-10 text-slate-600 mb-2" />
-              <p className="font-semibold text-slate-400 text-sm">No chats yet</p>
-              <p className="mt-1 text-[11px] text-slate-500">Click the <span className="text-[#00a884]">✎</span> icon above to start one</p>
+              <p className="font-semibold text-slate-400 text-sm">No chats found</p>
             </div>
           ) : (
             filteredChats.map(chat => {
               const isSelected = chat.chatId === activeChatId;
               const hasUnread = chat.lastMessage && chat.lastMessage.senderId !== user?.userId && chat.lastMessage.status !== "read";
-              const isMuted = mutedChats[chat.chatId];
-              const isPinned = pinnedChats[chat.chatId];
+              const isMuted = chat.settings?.isMuted || false;
+              const isPinned = chat.settings?.isPinned || false;
               return (
                 <div
                   key={chat.chatId}
                   onClick={() => { selectChat(chat.chatId); setShowNewChat(false); }}
+                  onContextMenu={(e) => handleSidebarContextMenu(e, chat.chatId)}
                   className={`flex items-center gap-3 px-4 py-3 cursor-pointer border-b border-[#202c33]/30 transition ${isSelected ? "bg-[#2a3942]" : "hover:bg-[#202c33]/50"}`}
                 >
-                  <Avatar name={chat.metadata?.recipientName || "U"} photo={chat.metadata?.recipientPhotoUrl} />
+                  <Avatar 
+                    name={chat.metadata?.recipientName || "U"} 
+                    photo={chat.metadata?.recipientPhotoUrl} 
+                    onClick={() => handleOpenContactInfo(chat)}
+                  />
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-baseline mb-0.5">
                       <h4 className="font-medium text-sm text-[#e9edef] truncate flex items-center gap-1.5">
@@ -427,6 +855,25 @@ const Dashboard: React.FC = () => {
                 </div>
               );
             })
+          )}
+
+          {/* Global Message search matches listing */}
+          {globalMessageResults.length > 0 && (
+            <div className="mt-4 border-t border-[#202c33]">
+              <div className="px-4 py-2 text-[10px] text-slate-400 uppercase tracking-widest font-bold bg-[#182229]/60 border-b border-[#202c33]/30">
+                Matched Messages ({globalMessageResults.length})
+              </div>
+              {globalMessageResults.map((m, idx) => (
+                <div 
+                  key={idx}
+                  onClick={() => selectChat(m.chatId)}
+                  className="px-4 py-2.5 hover:bg-[#202c33]/30 cursor-pointer border-b border-[#202c33]/20 flex flex-col gap-0.5 min-w-0"
+                >
+                  <span className="text-[10px] text-[#00a884] font-medium">Text match:</span>
+                  <p className="text-xs text-slate-300 truncate italic">"{m.content}"</p>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </div>
@@ -542,10 +989,13 @@ const Dashboard: React.FC = () => {
             {/* Chat Header */}
             <div className="h-[60px] bg-[#202c33] flex items-center justify-between px-4 border-b border-[#2e3b43]/30 shrink-0 relative">
               <div
-                onClick={() => activeChat.type === 'group' && setShowGroupInfo(true)}
-                className={`flex items-center gap-3 ${activeChat.type === 'group' ? 'cursor-pointer hover:opacity-80 transition' : ''}`}
+                className="flex items-center gap-3"
               >
-                <Avatar name={activeChat.metadata?.recipientName || "U"} photo={activeChat.metadata?.recipientPhotoUrl} />
+                <Avatar 
+                  name={activeChat.metadata?.recipientName || "U"} 
+                  photo={activeChat.metadata?.recipientPhotoUrl} 
+                  onClick={() => handleOpenContactInfo(activeChat)}
+                />
                 <div className="flex flex-col">
                   <span className="font-semibold text-sm leading-tight">{activeChat.metadata?.recipientName}</span>
                   <span className={`text-[10.5px] font-medium leading-none mt-0.5 transition-colors ${recipientTyping ? "text-[#00a884]" : "text-slate-400"}`}>
@@ -558,7 +1008,10 @@ const Dashboard: React.FC = () => {
                 <Video className="w-5 h-5 cursor-pointer hover:text-white" />
                 <Phone className="w-4 h-4 cursor-pointer hover:text-white" />
                 <div className="w-[1px] h-5 bg-[#2e3b43]" />
-                <Search className="w-4 h-4 cursor-pointer hover:text-white" />
+                <Search 
+                  onClick={() => setChatSearchOpen(!chatSearchOpen)} 
+                  className={`w-4 h-4 cursor-pointer hover:text-white ${chatSearchOpen ? 'text-[#00a884]' : ''}`} 
+                />
                 
                 {/* Header Options Dropdown */}
                 <div className="relative" ref={chatMenuRef}>
@@ -566,16 +1019,35 @@ const Dashboard: React.FC = () => {
                   {showChatMenu && (
                     <div className="absolute right-0 top-8 bg-[#233138] border border-[#2e3b43] rounded-lg py-2 w-48 shadow-xl z-30 text-xs select-none">
                       <button
-                        onClick={() => handleTogglePinChat(activeChat.chatId)}
+                        onClick={() => handleTogglePinChat(activeChat.chatId, activeChat.settings?.isPinned || false)}
                         className="w-full text-left px-4 py-2 hover:bg-[#182229] transition flex items-center gap-2"
                       >
-                        <Pin className="w-3.5 h-3.5 text-slate-400 rotate-45" /> {pinnedChats[activeChat.chatId] ? "Unpin Chat" : "Pin Chat"}
+                        <Pin className="w-3.5 h-3.5 text-slate-400 rotate-45" /> {activeChat.settings?.isPinned ? "Unpin Chat" : "Pin Chat"}
                       </button>
                       <button
-                        onClick={() => handleToggleMuteChat(activeChat.chatId)}
+                        onClick={() => {
+                          if (activeChat.settings?.isMuted) {
+                            handleUnmuteChat(activeChat.chatId);
+                            setShowChatMenu(false);
+                          } else {
+                            handleToggleMuteChat(activeChat.chatId);
+                          }
+                        }}
                         className="w-full text-left px-4 py-2 hover:bg-[#182229] transition flex items-center gap-2"
                       >
-                        <Volume2 className="w-3.5 h-3.5 text-slate-400" /> {mutedChats[activeChat.chatId] ? "Unmute Chat" : "Mute Notifications"}
+                        <Volume2 className="w-3.5 h-3.5 text-slate-400" /> {activeChat.settings?.isMuted ? "Unmute Notifications" : "Mute Notifications"}
+                      </button>
+                      <button
+                        onClick={() => setShowWallpaperMenu(!showWallpaperMenu)}
+                        className="w-full text-left px-4 py-2 hover:bg-[#182229] transition flex items-center gap-2"
+                      >
+                        <Palette className="w-3.5 h-3.5 text-slate-400" /> Change Wallpaper
+                      </button>
+                      <button
+                        onClick={handleExportChat}
+                        className="w-full text-left px-4 py-2 hover:bg-[#182229] transition flex items-center gap-2"
+                      >
+                        <Download className="w-3.5 h-3.5 text-slate-400" /> Export Chat (.txt)
                       </button>
                       <button
                         onClick={() => handleClearHistory(activeChat.chatId)}
@@ -595,6 +1067,47 @@ const Dashboard: React.FC = () => {
               </div>
             </div>
 
+            {/* Chat Keyword Search bar */}
+            {chatSearchOpen && (
+              <div className="bg-[#182229] px-4 py-2 border-b border-[#2e3b43]/30 flex items-center justify-between text-xs text-slate-300 shrink-0 font-medium z-10 select-none animate-in slide-in-from-top-2 duration-150">
+                <div className="flex items-center gap-2 w-full max-w-md">
+                  <Search className="w-4 h-4 text-slate-500 shrink-0" />
+                  <input 
+                    type="text" 
+                    value={chatSearchQuery}
+                    onChange={(e) => setChatSearchQuery(e.target.value)}
+                    placeholder="Search messages by keyword..."
+                    className="bg-transparent text-xs text-[#efeae2] focus:outline-none w-full"
+                    autoFocus
+                  />
+                  {chatSearchQuery && <X onClick={() => setChatSearchQuery("")} className="w-4 h-4 text-slate-500 cursor-pointer" />}
+                </div>
+                <button onClick={() => { setChatSearchOpen(false); setChatSearchQuery(""); }} className="text-xs text-slate-400 hover:text-white uppercase font-bold">Done</button>
+              </div>
+            )}
+
+            {/* Custom wallpaper selector dropdown panel */}
+            {showWallpaperMenu && (
+              <div className="absolute right-4 top-[64px] bg-[#233138] border border-[#2e3b43] rounded-xl p-3 shadow-2xl z-30 w-56 text-xs animate-in zoom-in-95 duration-100">
+                <div className="flex justify-between items-center mb-2 font-semibold">
+                  <span>Select Wallpaper</span>
+                  <X className="w-4 h-4 text-slate-500 hover:text-white cursor-pointer" onClick={() => setShowWallpaperMenu(false)} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {WALLPAPERS.map(wp => (
+                    <button
+                      key={wp.name}
+                      onClick={() => handleWallpaperSelect(activeChat.chatId, wp.value)}
+                      className="p-2 bg-[#202c33] border border-[#2e3b43] hover:border-[#00a884] rounded text-[10px] text-center"
+                    >
+                      <div className="w-full h-8 rounded mb-1 border border-black/10" style={{ backgroundColor: wp.value }} />
+                      <span className="truncate block">{wp.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Pinned Messages Bar (if any) */}
             {activePinnedMessages.length > 0 && (
               <div className="bg-[#182229] px-4 py-2 border-b border-[#2e3b43]/30 flex items-center justify-between text-xs text-[#00a884] shrink-0 font-medium z-10">
@@ -608,25 +1121,47 @@ const Dashboard: React.FC = () => {
               </div>
             )}
 
+            {/* Multi-select active header bar overlay */}
+            {selectMode && (
+              <div className="bg-[#005c4b] px-6 py-3 flex items-center justify-between text-xs text-white shrink-0 font-semibold z-10 select-none animate-in slide-in-from-top-4 duration-150">
+                <span>{selectedMsgIds.length} message(s) selected</span>
+                <div className="flex gap-4">
+                  <button 
+                    onClick={handleDeleteSelectedMessages}
+                    disabled={selectedMsgIds.length === 0}
+                    className="hover:underline flex items-center gap-1 disabled:opacity-50"
+                  >
+                    <Trash2 className="w-4 h-4" /> Delete Selected
+                  </button>
+                  <button onClick={() => { setSelectMode(false); setSelectedMsgIds([]); }} className="hover:underline flex items-center gap-1">
+                    <X className="w-4 h-4" /> Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Chat Screen Messages Container */}
             <div
               className="flex-1 overflow-y-auto p-4 md:p-6 space-y-1.5 flex flex-col"
-              style={{ backgroundImage: "url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')", backgroundBlendMode: "overlay", backgroundColor: "#0b141a" }}
+              style={{ 
+                backgroundImage: "url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')", 
+                backgroundBlendMode: "overlay", 
+                backgroundColor: activeChat.settings?.wallpaper || "#0b141a" 
+              }}
             >
-              {messages.length === 0 ? (
+              {filteredMessages.length === 0 ? (
                 <div className="flex-1 flex items-center justify-center">
                   <div className="bg-[#111b21]/80 border border-[#202c33] rounded-xl px-6 py-4 text-center max-w-[280px]">
-                    <div className="text-2xl mb-2">👋</div>
-                    <p className="text-sm font-semibold text-[#e9edef]">Say hello to {activeChat.metadata?.recipientName?.split(" ")[0]}</p>
-                    <p className="text-[11px] text-[#8696a0] mt-1">This is the beginning of your conversation</p>
+                    <p className="text-xs text-slate-400">No messages found</p>
                   </div>
                 </div>
               ) : (
-                messages.map(msg => {
+                filteredMessages.map(msg => {
                   const isMe = msg.senderId === user?.userId;
                   const isDeleted = msg.type === 'deleted' || msg.isDeletedForEveryone;
                   const isMessageHovered = hoveredMessageId === msg.messageId;
                   const isEditing = editingMsgId === msg.messageId;
+                  const isSelected = selectedMsgIds.includes(msg.messageId);
 
                   // Reaction badges
                   const reacts = msg.reactions || {};
@@ -636,12 +1171,27 @@ const Dashboard: React.FC = () => {
                     <div
                       key={msg.messageId}
                       id={`msg-${msg.messageId}`}
-                      onMouseEnter={() => setHoveredMessageId(msg.messageId)}
+                      onMouseEnter={() => !selectMode && setHoveredMessageId(msg.messageId)}
                       onMouseLeave={() => { setHoveredMessageId(null); setActiveMenuMsgId(null); }}
+                      onClick={() => selectMode && handleToggleMsgSelect(msg.messageId)}
                       className={`max-w-[65%] rounded-lg px-3 py-2 text-sm shadow-sm relative flex flex-col group min-w-[95px] ${
+                        selectMode ? 'cursor-pointer hover:brightness-110' : ''
+                      } ${
                         isMe ? "bg-[#005c4b] text-[#e9edef] self-end rounded-tr-none" : "bg-[#202c33] text-[#e9edef] self-start rounded-tl-none"
-                      }`}
+                      } ${isSelected ? 'ring-2 ring-[#00a884]' : ''}`}
                     >
+                      {/* Checkbox for Select Mode */}
+                      {selectMode && (
+                        <div className="absolute -left-7 top-1/2 -translate-y-1/2 z-20">
+                          <input 
+                            type="checkbox" 
+                            checked={isSelected}
+                            onChange={() => handleToggleMsgSelect(msg.messageId)}
+                            className="w-4 h-4 accent-[#00a884]"
+                          />
+                        </div>
+                      )}
+
                       {/* Quoted Reply Render */}
                       {msg.replyTo && (
                         <div className="mb-1.5 p-2 bg-black/20 border-l-4 border-[#00a884] rounded text-xs select-none">
@@ -725,7 +1275,7 @@ const Dashboard: React.FC = () => {
                           {/* Render text caption or message content */}
                           {msg.content && msg.type !== 'image' && msg.type !== 'video' && msg.type !== 'audio' && msg.type !== 'document' && (
                             <p className="pr-12 break-words leading-relaxed">
-                              {msg.content}
+                              {renderMessageText(msg.content)}
                               {msg.isEdited && <span className="text-[9px] text-slate-400 ml-1.5 font-normal select-none">(edited)</span>}
                             </p>
                           )}
@@ -761,7 +1311,7 @@ const Dashboard: React.FC = () => {
                       </div>
 
                       {/* Hover dropdown list trigger */}
-                      {isMessageHovered && !isDeleted && !isEditing && (
+                      {isMessageHovered && !isDeleted && !isEditing && !selectMode && (
                         <div className="absolute -top-3.5 right-2 z-20 flex items-center bg-[#233138] border border-[#2e3b43] rounded-full p-1 shadow-lg text-slate-400 gap-1.5 select-none animate-in fade-in zoom-in-95 duration-100">
                           {/* Quick Reactions bar */}
                           {["👍", "❤️", "😂", "😮", "😢", "🙏"].map(emoji => (
@@ -779,6 +1329,7 @@ const Dashboard: React.FC = () => {
                           <button onClick={() => setReplyToMessage(msg)} title="Reply" className="hover:text-white p-0.5"><ReplyIcon className="w-3 h-3" /></button>
                           {isMe && msg.type === 'text' && <button onClick={() => { setEditingMsgId(msg.messageId); setEditInput(msg.content); }} title="Edit" className="hover:text-white p-0.5"><Edit2 className="w-3 h-3" /></button>}
                           <button onClick={() => togglePinMessage(msg.messageId)} title="Pin" className="hover:text-white p-0.5"><Pin className="w-3 h-3 rotate-45" /></button>
+                          <button onClick={() => toggleStarMessage(msg.messageId)} title="Star" className="hover:text-[#00a884] p-0.5"><Star className="w-3 h-3" /></button>
                           
                           {/* Delete Options Menu */}
                           <div className="relative">
@@ -822,31 +1373,106 @@ const Dashboard: React.FC = () => {
               </div>
             )}
 
+            {/* Group @Mentions suggestion popover panel */}
+            {showMentionSuggest && filteredMentionSuggests.length > 0 && (
+              <div className="absolute left-4 bottom-16 bg-[#233138] border border-[#2e3b43] rounded-xl py-2 w-56 shadow-2xl z-30 max-h-40 overflow-y-auto select-none animate-in slide-in-from-bottom-2 duration-155">
+                <div className="px-3 py-1 text-[10px] text-slate-400 uppercase tracking-widest font-bold border-b border-[#2e3b43] mb-1">
+                  Mention Group Member
+                </div>
+                {filteredMentionSuggests.map(m => (
+                  <button
+                    key={m.userId}
+                    onClick={() => handleMentionSelect(m.username)}
+                    className="w-full text-left px-3 py-2 hover:bg-[#182229] transition text-xs font-semibold flex items-center gap-2"
+                  >
+                    <span className="w-5 h-5 rounded-full bg-[#00a884] flex items-center justify-center font-bold text-white uppercase text-[10px]">
+                      {m.name[0]}
+                    </span>
+                    <span>@{m.username}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Emoji Picker Tray overlay */}
+            {showEmojiPicker && (
+              <div 
+                ref={emojiPickerRef}
+                className="absolute left-4 bottom-16 w-72 h-48 bg-[#233138] border border-[#2e3b43] rounded-xl p-3 shadow-2xl z-30 flex flex-col animate-in fade-in slide-in-from-bottom-2 duration-150"
+              >
+                <div className="flex justify-between items-center mb-1.5 shrink-0 select-none">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Emoji Tray</span>
+                  <X className="w-3.5 h-3.5 text-slate-400 hover:text-white cursor-pointer" onClick={() => setShowEmojiPicker(false)} />
+                </div>
+                <div className="flex-1 overflow-y-auto grid grid-cols-8 gap-2 pr-1 select-none">
+                  {EMOJIS.map(emoji => (
+                    <button 
+                      key={emoji} 
+                      onClick={() => handleAddEmoji(emoji)}
+                      className="hover:scale-125 transition text-base"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Input bar */}
             <div className="h-[62px] bg-[#202c33] flex items-center px-4 py-2 border-t border-[#2e3b43]/30 gap-3 shrink-0">
-              <div className="flex gap-3 text-slate-400">
-                <Smile className="w-6 h-6 cursor-pointer hover:text-white transition" />
-                <Paperclip 
-                  onClick={() => fileInputRef.current?.click()} 
-                  className="w-5 h-5 cursor-pointer hover:text-white transition rotate-45" 
-                />
-              </div>
-              <form onSubmit={handleSendMessage} className="flex-1 flex gap-3 items-center">
-                <input
-                  type="text"
-                  value={inputText}
-                  onChange={handleInputChange}
-                  placeholder="Type a message"
-                  className="flex-1 bg-[#2a3942] border border-transparent rounded-lg px-4 py-2 text-sm text-[#efeae2] placeholder-[#8696a0] focus:outline-none transition"
-                />
-                <button
-                  type="submit"
-                  disabled={!inputText.trim()}
-                  className="bg-[#00a884] hover:bg-[#008f72] disabled:bg-transparent disabled:text-slate-400 text-white p-2.5 rounded-full transition flex items-center justify-center shrink-0"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
-              </form>
+              {isRecording ? (
+                // Flashing Voice Recording UI
+                <div className="flex-grow flex items-center justify-between bg-[#2a3942] rounded-lg px-4 py-2 text-sm text-[#efeae2]">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shrink-0" />
+                    <span className="font-semibold text-slate-300 text-xs">Recording Voice Note: {formatDuration(recordingDuration)}</span>
+                  </div>
+                  <div className="flex gap-4">
+                    <button onClick={handleCancelRecording} className="text-red-400 hover:text-red-300 text-xs font-semibold">Cancel</button>
+                    <button onClick={handleStopRecording} className="text-[#00a884] hover:text-[#008f72] text-xs font-bold uppercase">Send</button>
+                  </div>
+                </div>
+              ) : (
+                // Default Input Bar View
+                <>
+                  <div className="flex gap-3 text-slate-400 relative">
+                    <Smile 
+                      onClick={() => setShowEmojiPicker(!showEmojiPicker)} 
+                      className="w-6 h-6 cursor-pointer hover:text-white transition" 
+                    />
+                    <Paperclip 
+                      onClick={() => fileInputRef.current?.click()} 
+                      className="w-5 h-5 cursor-pointer hover:text-white transition rotate-45" 
+                    />
+                  </div>
+                  <form onSubmit={handleSendMessage} className="flex-1 flex gap-3 items-center">
+                    <input
+                      type="text"
+                      value={inputText}
+                      onChange={handleInputChange}
+                      placeholder="Type a message"
+                      className="flex-1 bg-[#2a3942] border border-transparent rounded-lg px-4 py-2 text-sm text-[#efeae2] placeholder-[#8696a0] focus:outline-none transition"
+                    />
+                    {inputText.trim() ? (
+                      <button
+                        type="submit"
+                        className="bg-[#00a884] hover:bg-[#008f72] text-white p-2.5 rounded-full transition flex items-center justify-center shrink-0"
+                      >
+                        <Send className="w-4 h-4" />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleStartRecording}
+                        className="bg-[#00a884] hover:bg-[#008f72] text-white p-2.5 rounded-full transition flex items-center justify-center shrink-0"
+                        title="Record Voice Note"
+                      >
+                        <Mic className="w-4 h-4" />
+                      </button>
+                    )}
+                  </form>
+                </>
+              )}
             </div>
           </>
         )}
@@ -865,6 +1491,19 @@ const Dashboard: React.FC = () => {
           chatId={activeChat.chatId}
           groupName={activeChat.metadata?.recipientName || 'Group'}
           onLeftGroup={() => { selectChat(''); }}
+        />
+      )}
+      {contactInfoData && (
+        <ContactInfoModal
+          isOpen={showContactInfo}
+          onClose={() => {
+            setShowContactInfo(false);
+            setContactInfoData(null);
+          }}
+          userId={contactInfoData.userId}
+          name={contactInfoData.name}
+          username={contactInfoData.username}
+          profilePhotoUrl={contactInfoData.profilePhotoUrl}
         />
       )}
     </div>

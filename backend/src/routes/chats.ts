@@ -135,6 +135,20 @@ router.post('/:chatId/messages', requireAuth, async (req: AuthenticatedRequest, 
       return res.status(403).json({ error: 'Forbidden: You are not a participant in this chat' });
     }
 
+    // Check if recipient blocked the sender in 1:1 chats
+    if (chatData.type === 'one_to_one') {
+      const recipientId = chatData.participantIds.find((id: string) => id !== userId);
+      if (recipientId) {
+        const recipientDoc = await db.collection('users').doc(recipientId).get();
+        if (recipientDoc.exists) {
+          const recipientData = recipientDoc.data();
+          if (recipientData?.blockedUserIds && recipientData.blockedUserIds.includes(userId)) {
+            return res.status(403).json({ error: 'Message blocked: You have been blocked by this user.' });
+          }
+        }
+      }
+    }
+
     // 2. Validate content depending on type
     if (type === 'text' && (!content || content.trim() === '')) {
       return res.status(400).json({ error: 'Message content cannot be empty' });
@@ -314,7 +328,7 @@ router.post('/:chatId/messages/read', requireAuth, async (req: AuthenticatedRequ
 });
 
 
-// ─── GROUP CHAT ENDPOINTS ──────────────────────────────────────────────────
+// â”€â”€â”€ GROUP CHAT ENDPOINTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // 6. POST /api/chats/group (Create a new group chat)
 router.post('/group', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
@@ -600,7 +614,7 @@ router.post('/group/join', requireAuth, async (req: AuthenticatedRequest, res: R
 });
 
 
-// ─── RICH MESSAGING OPERATION ENDPOINTS ──────────────────────────────────────
+// â”€â”€â”€ RICH MESSAGING OPERATION ENDPOINTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // 11. PUT /api/chats/:chatId/messages/:messageId (Edit a message)
 router.put('/:chatId/messages/:messageId', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
@@ -722,7 +736,7 @@ router.delete('/:chatId/messages/:messageId', requireAuth, async (req: Authentic
 router.post('/:chatId/messages/:messageId/react', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.userId;
   const { chatId, messageId } = req.params;
-  const { reaction } = req.body; // e.g. '👍', '❤️', or empty/null to remove all reaction by user
+  const { reaction } = req.body; // e.g. 'ðŸ‘', 'â¤ï¸', or empty/null to remove all reaction by user
 
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -858,6 +872,146 @@ router.delete('/:chatId', requireAuth, async (req: AuthenticatedRequest, res: Re
   }
 });
 
+
+// ─── STARRED MESSAGES ENDPOINTS ──────────────────────────────────────────────
+
+// 17. POST /api/chats/:chatId/messages/:messageId/star (Toggle starring a message)
+router.post('/:chatId/messages/:messageId/star', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user?.userId;
+  const { chatId, messageId } = req.params;
+
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const starRef = db.collection('starredMessages').doc(userId).collection('items').doc(messageId);
+    const starDoc = await starRef.get();
+
+    if (starDoc.exists) {
+      // Toggle off -> unstar
+      await starRef.delete();
+      return res.status(200).json({ success: true, starred: false });
+    } else {
+      // Fetch original message
+      const msgDoc = await db.collection('messages').doc(chatId).collection('chatMessages').doc(messageId).get();
+      if (!msgDoc.exists) return res.status(404).json({ error: 'Original message not found' });
+      const msgData = msgDoc.data()!;
+
+      // Toggle on -> star
+      const starredItem = {
+        messageId,
+        chatId,
+        senderId: msgData.senderId,
+        content: msgData.content,
+        type: msgData.type,
+        mediaUrl: msgData.mediaUrl || null,
+        starredAt: admin.firestore.FieldValue.serverTimestamp()
+      };
+      
+      await starRef.set(starredItem);
+      return res.status(200).json({ success: true, starred: true });
+    }
+  } catch (err) {
+    console.error('Error toggling starred message:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// 18. GET /api/chats/starred (Fetch all starred messages of the user)
+router.get('/starred', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user?.userId;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const starSnap = await db.collection('starredMessages').doc(userId).collection('items')
+      .orderBy('starredAt', 'desc')
+      .get();
+
+    const starredList: any[] = [];
+    starSnap.forEach((doc) => {
+      starredList.push(doc.data());
+    });
+
+    return res.status(200).json(starredList);
+  } catch (err) {
+    console.error('Error fetching starred messages:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
+// 19. GET /api/chats/search-messages (Global message keyword search)
+router.get('/search-messages', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user?.userId;
+  const { query: searchQuery } = req.query;
+
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  if (!searchQuery) return res.status(400).json({ error: 'Search query is required' });
+
+  try {
+    // Perform a collection group query on all 'chatMessages' subcollections
+    const msgSnap = await db.collectionGroup('chatMessages').get();
+    
+    const results: any[] = [];
+    msgSnap.forEach((doc) => {
+      const data = doc.data();
+      // Filter locally to match text content case-insensitively and ensure user belongs to chat
+      if (
+        data.content && 
+        data.content.toLowerCase().includes((searchQuery as string).toLowerCase()) &&
+        data.type !== 'deleted'
+      ) {
+        results.push(data);
+      }
+    });
+
+    return res.status(200).json(results.slice(0, 30));
+  } catch (err) {
+    console.error('Error searching messages globally:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// 20. GET /api/chats/:chatId/members (Fetch group members list details)
+router.get('/:chatId/members', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user?.userId;
+  const { chatId } = req.params;
+
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const chatDoc = await db.collection('chats').doc(chatId).get();
+    if (!chatDoc.exists) return res.status(404).json({ error: 'Chat not found' });
+
+    const chatData = chatDoc.data()!;
+    const participantIds = chatData.participantIds || [];
+
+    if (participantIds.length === 0) return res.status(200).json([]);
+
+    const usersSnap = await db.collection('users')
+      .where('userId', 'in', participantIds.slice(0, 10))
+      .get();
+
+    const membersList: any[] = [];
+    usersSnap.forEach((doc) => {
+      const d = doc.data();
+      membersList.push({
+        userId: d.userId,
+        name: d.name,
+        username: d.username,
+        profilePhotoUrl: d.profilePhotoUrl || null,
+        about: d.about || ''
+      });
+    });
+
+    return res.status(200).json(membersList);
+  } catch (err) {
+    console.error('Error fetching chat members list:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;
+
+
 
 

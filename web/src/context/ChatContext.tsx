@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
-import { collection, query, where, onSnapshot, orderBy, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from './AuthContext';
 
@@ -22,9 +22,16 @@ export interface Chat {
   createdAt: any;
   createdBy: string;
   metadata?: {
-    recipientName: string;
-    recipientUsername: string;
     recipientPhotoUrl: string | null;
+  };
+  settings?: {
+    isPinned: boolean;
+    isArchived: boolean;
+    isMuted: boolean;
+    muteUntil: any;
+    wallpaper: string | null;
+    unreadCount: number;
+    lastReadMessageId: string;
   };
 }
 
@@ -74,6 +81,12 @@ interface ChatContextType {
   togglePinMessage: (messageId: string) => Promise<void>;
   clearChatHistory: (chatId: string) => Promise<void>;
   deleteChat: (chatId: string) => Promise<void>;
+  toggleStarMessage: (messageId: string) => Promise<void>;
+  fetchStarredMessages: () => Promise<any[]>;
+  blockUser: (targetUserId: string) => Promise<void>;
+  unblockUser: (targetUserId: string) => Promise<void>;
+  fetchBlockedUsers: () => Promise<any[]>;
+  updateChatSettings: (chatId: string, updates: any) => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -133,10 +146,39 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
 
+        let settings = {
+          isPinned: false,
+          isArchived: false,
+          isMuted: false,
+          muteUntil: null,
+          wallpaper: null,
+          unreadCount: 0,
+          lastReadMessageId: ''
+        };
+
+        try {
+          const settingsDoc = await getDoc(doc(db, 'chats', chatId, 'settings', user.userId));
+          if (settingsDoc.exists()) {
+            const sData = settingsDoc.data();
+            settings = {
+              isPinned: sData.isPinned || false,
+              isArchived: sData.isArchived || false,
+              isMuted: sData.isMuted || false,
+              muteUntil: sData.muteUntil || null,
+              wallpaper: sData.wallpaper || null,
+              unreadCount: sData.unreadCount || 0,
+              lastReadMessageId: sData.lastReadMessageId || ''
+            };
+          }
+        } catch (e) {
+          console.error('Error fetching chat settings:', e);
+        }
+
         chatsList.push({
           chatId,
           ...chatData,
-          metadata
+          metadata,
+          settings
         });
       }
 
@@ -337,6 +379,56 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // 13. Star message
+  const toggleStarMessage = async (messageId: string) => {
+    if (!activeChatId) return;
+    try {
+      await axios.post(`${API_URL}/chats/${activeChatId}/messages/${messageId}/star`);
+    } catch (err: any) {
+      console.error('Failed to star message:', err);
+    }
+  };
+
+  // 14. Fetch starred messages
+  const fetchStarredMessages = async (): Promise<any[]> => {
+    try {
+      const res = await axios.get(`${API_URL}/chats/starred`);
+      return res.data;
+    } catch (err) {
+      console.error('Failed to fetch starred messages:', err);
+      return [];
+    }
+  };
+
+  // 15. Block user
+  const blockUser = async (targetUserId: string) => {
+    try {
+      await axios.post(`${API_URL}/profile/block`, { targetUserId });
+    } catch (err) {
+      console.error('Failed to block user:', err);
+    }
+  };
+
+  // 16. Unblock user
+  const unblockUser = async (targetUserId: string) => {
+    try {
+      await axios.post(`${API_URL}/profile/unblock`, { targetUserId });
+    } catch (err) {
+      console.error('Failed to unblock user:', err);
+    }
+  };
+
+  // 17. Fetch blocked users
+  const fetchBlockedUsers = async (): Promise<any[]> => {
+    try {
+      const res = await axios.get(`${API_URL}/profile/blocked`);
+      return res.data;
+    } catch (err) {
+      console.error('Failed to fetch blocked users:', err);
+      return [];
+    }
+  };
+
   return (
     <ChatContext.Provider
       value={{
@@ -357,7 +449,21 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
         reactToMessage,
         togglePinMessage,
         clearChatHistory,
-        deleteChat
+        deleteChat,
+        toggleStarMessage,
+        fetchStarredMessages,
+        blockUser,
+        unblockUser,
+        fetchBlockedUsers,
+        updateChatSettings: async (chatId: string, updates: any) => {
+          if (!user) return;
+          try {
+            const settingsRef = doc(db, 'chats', chatId, 'settings', user.userId);
+            await setDoc(settingsRef, updates, { merge: true });
+          } catch (err) {
+            console.error('Failed to update chat settings:', err);
+          }
+        }
       }}
     >
       {children}
