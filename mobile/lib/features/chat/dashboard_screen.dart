@@ -37,7 +37,11 @@ class DashboardScreen extends ConsumerWidget {
             icon: const Icon(Icons.more_vert, color: Color(0xFFE9EDEF)),
             onSelected: (value) async {
               if (value == 'linked_devices') {
-                context.push('/linked-devices');
+                Future.delayed(Duration.zero, () {
+                  if (context.mounted) {
+                    context.push('/linked-devices');
+                  }
+                });
               } else if (value == 'logout') {
                 await ref.read(authProvider.notifier).logout();
                 if (context.mounted) {
