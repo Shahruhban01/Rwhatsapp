@@ -108,6 +108,7 @@ class MessageModel {
   final DateTime sentAt;
   final DateTime? deliveredAt;
   final DateTime? readAt;
+  final Map<String, dynamic>? reactions;
 
   MessageModel({
     required this.messageId,
@@ -128,6 +129,7 @@ class MessageModel {
     required this.sentAt,
     this.deliveredAt,
     this.readAt,
+    this.reactions,
   });
 
   factory MessageModel.fromFirestore(DocumentSnapshot doc) {
@@ -155,6 +157,7 @@ class MessageModel {
           ? (data['deliveredAt'] as Timestamp).toDate()
           : null,
       readAt: data['readAt'] != null ? (data['readAt'] as Timestamp).toDate() : null,
+      reactions: data['reactions'],
     );
   }
 }
@@ -353,6 +356,66 @@ class ChatNotifier extends StateNotifier<ChatState> {
       await _dio.post('/chats/$chatId/messages/read');
     } catch (e) {
       print('Failed to mark messages as read: $e');
+    }
+  }
+
+  Future<void> sendMediaMessage(String mediaUrl, String type, String name, int size) async {
+    final chatId = state.activeChatId;
+    if (chatId == null || _authState.user == null) return;
+
+    try {
+      await _dio.post('/chats/$chatId/messages', data: {
+        'type': type,
+        'content': '[$type]',
+        'mediaUrl': mediaUrl,
+        'mediaName': name,
+        'mediaSize': size,
+      });
+    } on DioException catch (e) {
+      final errMsg = e.response?.data['error'] ?? 'Failed to send media';
+      state = state.copyWith(error: errMsg);
+      throw errMsg;
+    }
+  }
+
+  Future<Map<String, dynamic>> uploadFile(String filePath, String fileName) async {
+    try {
+      final formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(filePath, filename: fileName),
+      });
+
+      final res = await _dio.post('/storage/upload', data: formData);
+      return res.data; // { url, fileName, fileSize, mimeType }
+    } on DioException catch (e) {
+      throw e.response?.data['error'] ?? 'Upload failed';
+    } catch (e) {
+      throw e.toString();
+    }
+  }
+
+  Future<void> deleteMessageForEveryone(String messageId) async {
+    final chatId = state.activeChatId;
+    if (chatId == null || _authState.user == null) return;
+
+    try {
+      await _dio.delete('/chats/$chatId/messages/$messageId', queryParameters: {'mode': 'everyone'});
+    } on DioException catch (e) {
+      throw e.response?.data['error'] ?? 'Failed to delete message';
+    } catch (e) {
+      throw e.toString();
+    }
+  }
+
+  Future<void> reactToMessage(String messageId, String emoji) async {
+    final chatId = state.activeChatId;
+    if (chatId == null || _authState.user == null) return;
+
+    try {
+      await _dio.post('/chats/$chatId/messages/$messageId/react', data: {'reaction': emoji});
+    } on DioException catch (e) {
+      throw e.response?.data['error'] ?? 'Failed to react to message';
+    } catch (e) {
+      throw e.toString();
     }
   }
 

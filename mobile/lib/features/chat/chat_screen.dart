@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 
@@ -18,6 +20,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
   Timer? _typingTimer;
+  bool _isUploading = false;
 
   @override
   void initState() {
@@ -51,13 +54,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
     final typingRef = FirebaseDatabase.instance.ref('typing/${widget.chatId}/${myUser.userId}');
 
-    // Set typing state
     typingRef.set({
       'isTyping': true,
       'startedAt': DateTime.now().millisecondsSinceEpoch,
     });
 
-    // Debounce to stop typing indicator
     _typingTimer?.cancel();
     _typingTimer = Timer(const Duration(seconds: 2), () {
       typingRef.remove();
@@ -69,8 +70,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (text.isEmpty) return;
 
     _messageController.clear();
-    
-    // Stop typing immediately
     _typingTimer?.cancel();
     final myUser = ref.read(authProvider).user;
     if (myUser != null) {
@@ -87,6 +86,121 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         );
       }
     }
+  }
+
+  Future<void> _pickAndSendMedia(ImageSource source) async {
+    final picker = ImagePicker();
+    final XFile? file = await picker.pickImage(source: source, imageQuality: 85);
+    if (file == null) return;
+
+    setState(() => _isUploading = true);
+    try {
+      final uploadRes = await ref.read(chatProvider.notifier).uploadFile(file.path, file.name);
+      final url = uploadRes['url'];
+      final size = uploadRes['fileSize'] ?? 0;
+      
+      await ref.read(chatProvider.notifier).sendMediaMessage(url, 'image', file.name, size);
+      Timer(const Duration(milliseconds: 100), _scrollToBottom);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Media send failed: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
+    }
+  }
+
+  void _showAttachmentMenu() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF222E35),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: Color(0xFF00A884)),
+              title: const Text('Gallery', style: TextStyle(color: Color(0xFFE9EDEF))),
+              onTap: () {
+                Navigator.pop(context);
+                _pickAndSendMedia(ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: Color(0xFF00A884)),
+              title: const Text('Camera', style: TextStyle(color: Color(0xFFE9EDEF))),
+              onTap: () {
+                Navigator.pop(context);
+                _pickAndSendMedia(ImageSource.camera);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showMessageMenu(MessageModel msg, bool isMe) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF222E35),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Reactions Quick Bar
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: ['👍', '❤️', '😂', '😮', '😢', '🙏'].map((emoji) {
+                  return GestureDetector(
+                    onTap: () {
+                      Navigator.pop(context);
+                      ref.read(chatProvider.notifier).reactToMessage(msg.messageId, emoji);
+                    },
+                    child: Text(emoji, style: const TextStyle(fontSize: 26)),
+                  );
+                }).toList(),
+              ),
+            ),
+            const Divider(color: Color(0xFF374248)),
+            ListTile(
+              leading: const Icon(Icons.copy, color: Color(0xFF8696A0)),
+              title: const Text('Copy Text', style: TextStyle(color: Color(0xFFE9EDEF))),
+              onTap: () {
+                Navigator.pop(context);
+                Clipboard.setData(ClipboardData(text: msg.content));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Message copied to clipboard')),
+                );
+              },
+            ),
+            if (isMe && !msg.isDeletedForEveryone)
+              ListTile(
+                leading: const Icon(Icons.delete, color: Colors.redAccent),
+                title: const Text('Delete for Everyone', style: TextStyle(color: Colors.redAccent)),
+                onTap: () async {
+                  Navigator.pop(context);
+                  try {
+                    await ref.read(chatProvider.notifier).deleteMessageForEveryone(msg.messageId);
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(e.toString()), backgroundColor: Colors.redAccent),
+                      );
+                    }
+                  }
+                },
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _formatTime(DateTime time) {
@@ -116,7 +230,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       orElse: () => '',
     );
 
-    // Auto-scroll when messages arrive
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (chatState.messages.isNotEmpty) {
         _scrollToBottom();
@@ -151,7 +264,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFFE9EDEF)),
                   ),
                   const SizedBox(height: 2),
-                  // Real-time recipient presence status using RTDB streams
                   if (recipientId.isNotEmpty)
                     StreamBuilder<DatabaseEvent>(
                       stream: FirebaseDatabase.instance.ref('presence/$recipientId').onValue,
@@ -160,7 +272,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           final data = Map<dynamic, dynamic>.from(snapshot.data!.snapshot.value as Map);
                           final state = data['state'] ?? 'offline';
 
-                          // Check if currently typing
                           return StreamBuilder<DatabaseEvent>(
                             stream: FirebaseDatabase.instance.ref('typing/${widget.chatId}/$recipientId').onValue,
                             builder: (context, typingSnapshot) {
@@ -221,10 +332,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             child: chatState.loadingMessages
                 ? const Center(child: CircularProgressIndicator(color: Color(0xFF00A884)))
                 : chatState.messages.isEmpty
-                    ? Center(
+                    ? const Center(
                         child: Text(
                           'No messages yet. Send a greeting!',
-                          style: TextStyle(color: const Color(0xFF8696A0).withValues(alpha: 0.8), fontSize: 13),
+                          style: TextStyle(color: Color(0xFF8696A0), fontSize: 13),
                         ),
                       )
                     : ListView.builder(
@@ -235,38 +346,127 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           final msg = chatState.messages[index];
                           final isMe = msg.senderId == authState.user?.userId;
 
+                          // Format reactions map locally
+                          final reactionEmojis = <String>[];
+                          if (msg.reactions != null) {
+                            msg.reactions!.forEach((emoji, userIds) {
+                              if (userIds is List && userIds.isNotEmpty) {
+                                reactionEmojis.add(emoji);
+                              }
+                            });
+                          }
+
                           return Align(
                             alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                            child: Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              padding: const EdgeInsets.only(left: 12, right: 12, top: 8, bottom: 20),
-                              constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.7),
-                              decoration: BoxDecoration(
-                                color: isMe ? const Color(0xFF005C4B) : const Color(0xFF202C33),
-                                borderRadius: BorderRadius.only(
-                                  topLeft: const Radius.circular(8),
-                                  topRight: const Radius.circular(8),
-                                  bottomLeft: isMe ? const Radius.circular(8) : Radius.zero,
-                                  bottomRight: isMe ? Radius.zero : const Radius.circular(8),
-                                ),
-                              ),
-                              child: Stack(
-                                children: [
-                                  Padding(
-                                    padding: const EdgeInsets.only(right: 48),
-                                    child: Text(
-                                      msg.content,
-                                      style: const TextStyle(color: Color(0xFFE9EDEF), fontSize: 14),
-                                    ),
+                            child: GestureDetector(
+                              onLongPress: () => _showMessageMenu(msg, isMe),
+                              child: Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.all(8),
+                                constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.7),
+                                decoration: BoxDecoration(
+                                  color: isMe ? const Color(0xFF005C4B) : const Color(0xFF202C33),
+                                  borderRadius: BorderRadius.only(
+                                    topLeft: const Radius.circular(8),
+                                    topRight: const Radius.circular(8),
+                                    bottomLeft: isMe ? const Radius.circular(8) : Radius.zero,
+                                    bottomRight: isMe ? Radius.zero : const Radius.circular(8),
                                   ),
-                                  PositionPoint(isMe: isMe, msg: msg, formatTime: _formatTime(msg.sentAt)),
-                                ],
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (msg.type == 'image' && msg.mediaUrl != null) ...[
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(6),
+                                        child: Image.network(
+                                          msg.mediaUrl!,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (c, o, s) => Container(
+                                            height: 150,
+                                            color: Colors.black26,
+                                            child: const Icon(Icons.broken_image, color: Colors.grey),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                    ],
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: 48, bottom: 4),
+                                      child: Text(
+                                        msg.content,
+                                        style: TextStyle(
+                                          color: msg.isDeletedForEveryone ? const Color(0xFF8696A0) : const Color(0xFFE9EDEF),
+                                          fontSize: 14,
+                                          fontStyle: msg.isDeletedForEveryone ? FontStyle.italic : FontStyle.normal,
+                                        ),
+                                      ),
+                                    ),
+                                    // Timestamp and receipt
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.end,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          _formatTime(msg.sentAt),
+                                          style: const TextStyle(color: Color(0xFF8696A0), fontSize: 9),
+                                        ),
+                                        if (isMe) ...[
+                                          const SizedBox(width: 3),
+                                          Icon(
+                                            msg.status == 'read'
+                                                ? Icons.done_all
+                                                : msg.status == 'delivered'
+                                                    ? Icons.done_all
+                                                    : Icons.done,
+                                            size: 13,
+                                            color: msg.status == 'read' ? const Color(0xFF53BDEB) : const Color(0xFF8696A0),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    // Render Reactions row if any reactions are present
+                                    if (reactionEmojis.isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF111B21),
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: reactionEmojis.map((e) => Text(e, style: const TextStyle(fontSize: 12))).toList(),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
                               ),
                             ),
                           );
                         },
                       ),
           ),
+
+          // Uploading indicator
+          if (_isUploading)
+            Container(
+              padding: const EdgeInsets.all(8),
+              color: const Color(0xFF111B21),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00A884)),
+                  ),
+                  SizedBox(width: 10),
+                  Text('Sending file...', style: TextStyle(color: Color(0xFF8696A0), fontSize: 13)),
+                ],
+              ),
+            ),
 
           // 2. Chat Input Container
           Container(
@@ -280,7 +480,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.attach_file, color: Color(0xFF8696A0)),
-                  onPressed: () {},
+                  onPressed: _showAttachmentMenu,
                 ),
                 Expanded(
                   child: TextField(
@@ -312,43 +512,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               ],
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class PositionPoint extends StatelessWidget {
-  final bool isMe;
-  final MessageModel msg;
-  final String formatTime;
-
-  const PositionPoint({super.key, required this.isMe, required this.msg, required this.formatTime});
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned(
-      right: 0,
-      bottom: -16,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            formatTime,
-            style: const TextStyle(color: Color(0xFF8696A0), fontSize: 9),
-          ),
-          if (isMe) ...[
-            const SizedBox(width: 3),
-            Icon(
-              msg.status == 'read'
-                  ? Icons.done_all
-                  : msg.status == 'delivered'
-                      ? Icons.done_all
-                      : Icons.done,
-              size: 13,
-              color: msg.status == 'read' ? const Color(0xFF53BDEB) : const Color(0xFF8696A0),
-            ),
-          ],
         ],
       ),
     );

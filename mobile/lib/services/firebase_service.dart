@@ -28,7 +28,7 @@ class FirebaseService {
         
         print('Connecting to RTDB emulator at $host:9000');
         FirebaseDatabase.instance.useDatabaseEmulator(host, 9000);
-      } else {
+      // } else {
         await Firebase.initializeApp(
           options: const FirebaseOptions(
             apiKey: "AIzaSyB3A7DqEA5pz6PHMGhiJDPrMaYrpW_bVSA",
