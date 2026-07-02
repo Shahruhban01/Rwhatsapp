@@ -604,7 +604,13 @@ router.post('/register', async (req: Request, res: Response) => {
       const usernameSnap = await tx.get(usernameRef);
 
       if (usernameSnap.exists) {
-        throw new Error('USERNAME_TAKEN');
+        const uData = usernameSnap.data()!;
+        const inputPinHash = createHash('sha256').update(pin + uData.userId).digest('hex');
+        if (inputPinHash === uData.pinHash) {
+          throw new Error('SIGN_IN_EXISTING');
+        } else {
+          throw new Error('USERNAME_TAKEN');
+        }
       }
 
       const userId = uuidv4();
@@ -672,6 +678,56 @@ router.post('/register', async (req: Request, res: Response) => {
       },
     });
   } catch (err: any) {
+    if (err.message === 'SIGN_IN_EXISTING') {
+      try {
+        const usernameSnap = await db.collection('usernames').doc(normalizedUsername).get();
+        const { userId } = usernameSnap.data()!;
+        const userSnap = await db.collection('users').doc(userId).get();
+        const userData = userSnap.data()!;
+        const sessionId = uuidv4();
+        const jwtToken = generateAccessToken(userId, sessionId);
+        const refreshToken = generateRefreshToken(userId, sessionId);
+
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 30);
+
+        await db.collection('sessions').doc(sessionId).set({
+          sessionId,
+          userId,
+          refreshToken,
+          deviceName: deviceName || 'Web Browser',
+          platform: platform || 'web',
+          ipAddress: req.ip || '0.0.0.0',
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          lastActiveAt: admin.firestore.FieldValue.serverTimestamp(),
+          expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+          isActive: true,
+        });
+
+        let firebaseToken: string | null = null;
+        try {
+          firebaseToken = await admin.auth().createCustomToken(userId);
+        } catch (e) {
+          console.warn('Could not generate Firebase custom token:', e);
+        }
+
+        return res.status(200).json({
+          jwt: jwtToken,
+          refreshToken,
+          firebaseToken,
+          user: {
+            userId: userData.userId,
+            username: userData.username,
+            name: userData.name,
+            about: userData.about,
+            profilePhotoUrl: userData.profilePhotoUrl,
+          },
+        });
+      } catch (loginErr) {
+        console.error('Error during auto-login:', loginErr);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+    }
     if (err.message === 'USERNAME_TAKEN') {
       return res.status(409).json({ error: 'Username is already taken' });
     }

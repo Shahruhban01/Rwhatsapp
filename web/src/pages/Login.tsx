@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
@@ -95,9 +95,10 @@ const Login: React.FC = () => {
     arr: string[], setArr: React.Dispatch<React.SetStateAction<string[]>>,
     refs: React.RefObject<HTMLInputElement | null>[]
   ) => {
-    if (!/^\d?$/.test(value)) return;
-    const updated = [...arr]; updated[index] = value; setArr(updated);
-    if (value && index < 3) refs[index + 1].current?.focus();
+    const char = value.slice(-1);
+    if (!/^\d?$/.test(char)) return;
+    const updated = [...arr]; updated[index] = char; setArr(updated);
+    if (char && index < 3) refs[index + 1].current?.focus();
   };
 
   const handlePinKey = (
@@ -194,7 +195,7 @@ const Login: React.FC = () => {
     <div className="flex justify-center gap-3 my-3">
       {arr.map((digit, i) => (
         <input
-          key={i} ref={refs[i]} type="password" inputMode="numeric" maxLength={1} value={digit}
+          key={i} ref={refs[i]} type="password" inputMode="numeric" value={digit}
           autoFocus={autoFocus && i === 0}
           onChange={(e) => handlePinDigit(i, e.target.value, arr, setArr, refs)}
           onKeyDown={(e) => handlePinKey(i, e, arr, refs)}
