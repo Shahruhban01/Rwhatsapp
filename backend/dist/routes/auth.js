@@ -173,7 +173,15 @@ router.post('/refresh', async (req, res) => {
         await firebase_1.db.collection('sessions').doc(sessionId).update({
             lastActiveAt: admin.firestore.FieldValue.serverTimestamp()
         });
-        return res.status(200).json({ jwt: newJwtToken });
+        // Generate Firebase custom token
+        let firebaseToken = null;
+        try {
+            firebaseToken = await admin.auth().createCustomToken(userId);
+        }
+        catch (e) {
+            console.warn('Could not generate Firebase custom token:', e);
+        }
+        return res.status(200).json({ jwt: newJwtToken, firebaseToken });
     }
     catch (err) {
         console.error('Error refreshing token:', err);
@@ -506,6 +514,187 @@ router.get('/pin/status', async (req, res) => {
     catch (err) {
         console.error('Error checking PIN status:', err);
         return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+// ── NEW PRIMARY AUTH FLOW ─────────────────────────────────────────────────────
+const USERNAME_REGEX = /^[a-z0-9_]{3,20}$/;
+// 10. POST /api/auth/validate-key — Step 1: Check access key is valid
+router.post('/validate-key', async (req, res) => {
+    const { accessKey } = req.body;
+    if (!accessKey)
+        return res.status(400).json({ error: 'Access key is required' });
+    const correct = process.env.ACCESS_KEY || 'my-whatsapp-secret-key';
+    if (accessKey !== correct)
+        return res.status(401).json({ error: 'Invalid access key' });
+    return res.status(200).json({ valid: true });
+});
+// 11. POST /api/auth/register — Step 2a: Create new account with username + PIN
+router.post('/register', async (req, res) => {
+    const { accessKey, username, pin, name, deviceName, platform } = req.body;
+    // Validate access key
+    const correct = process.env.ACCESS_KEY || 'my-whatsapp-secret-key';
+    if (!accessKey || accessKey !== correct) {
+        return res.status(401).json({ error: 'Invalid access key' });
+    }
+    // Validate username
+    if (!username || !USERNAME_REGEX.test(username.toLowerCase())) {
+        return res.status(400).json({ error: 'Username must be 3–20 chars, lowercase letters, numbers, underscores only' });
+    }
+    // Validate PIN
+    if (!pin || !/^\d{4}$/.test(pin)) {
+        return res.status(400).json({ error: 'PIN must be exactly 4 digits' });
+    }
+    const normalizedUsername = username.toLowerCase();
+    try {
+        // Use transaction to guarantee username uniqueness
+        const result = await firebase_1.db.runTransaction(async (tx) => {
+            const usernameRef = firebase_1.db.collection('usernames').doc(normalizedUsername);
+            const usernameSnap = await tx.get(usernameRef);
+            if (usernameSnap.exists) {
+                throw new Error('USERNAME_TAKEN');
+            }
+            const userId = (0, uuid_1.v4)();
+            const pinHash = (0, crypto_1.createHash)('sha256').update(pin + userId).digest('hex');
+            const sessionId = (0, uuid_1.v4)();
+            const expiresAt = new Date();
+            expiresAt.setDate(expiresAt.getDate() + 30);
+            const userDoc = {
+                userId,
+                username: normalizedUsername,
+                name: name || normalizedUsername,
+                about: 'Hey there! I am using WhatsApp.',
+                profilePhotoUrl: null,
+                blockedUserIds: [],
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            };
+            tx.set(firebase_1.db.collection('users').doc(userId), userDoc);
+            tx.set(usernameRef, {
+                userId,
+                pinHash,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            const jwtToken = (0, jwt_1.generateAccessToken)(userId, sessionId);
+            const refreshToken = (0, jwt_1.generateRefreshToken)(userId, sessionId);
+            tx.set(firebase_1.db.collection('sessions').doc(sessionId), {
+                sessionId,
+                userId,
+                refreshToken,
+                deviceName: deviceName || 'Web Browser',
+                platform: platform || 'web',
+                ipAddress: req.ip || '0.0.0.0',
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                lastActiveAt: admin.firestore.FieldValue.serverTimestamp(),
+                expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+                isActive: true,
+            });
+            return { userId, userDoc, jwtToken, refreshToken };
+        });
+        // Generate Firebase custom token so client can sign in for Firestore access
+        let firebaseToken = null;
+        try {
+            firebaseToken = await admin.auth().createCustomToken(result.userId);
+        }
+        catch (e) {
+            console.warn('Could not generate Firebase custom token:', e);
+        }
+        return res.status(201).json({
+            jwt: result.jwtToken,
+            refreshToken: result.refreshToken,
+            firebaseToken,
+            user: {
+                userId: result.userDoc.userId,
+                username: result.userDoc.username,
+                name: result.userDoc.name,
+                about: result.userDoc.about,
+                profilePhotoUrl: result.userDoc.profilePhotoUrl,
+            },
+        });
+    }
+    catch (err) {
+        if (err.message === 'USERNAME_TAKEN') {
+            return res.status(409).json({ error: 'Username is already taken' });
+        }
+        console.error('Register error:', err);
+        return res.status(500).json({ error: 'Internal server error during registration' });
+    }
+});
+// 12. POST /api/auth/login-user — Step 2b: Login existing account with username + PIN
+router.post('/login-user', async (req, res) => {
+    const { accessKey, username, pin, deviceName, platform } = req.body;
+    // Validate access key
+    const correct = process.env.ACCESS_KEY || 'my-whatsapp-secret-key';
+    if (!accessKey || accessKey !== correct) {
+        return res.status(401).json({ error: 'Invalid access key' });
+    }
+    if (!username)
+        return res.status(400).json({ error: 'Username is required' });
+    if (!pin || !/^\d{4}$/.test(pin))
+        return res.status(400).json({ error: 'PIN must be 4 digits' });
+    const normalizedUsername = username.toLowerCase();
+    try {
+        // Look up username
+        const usernameSnap = await firebase_1.db.collection('usernames').doc(normalizedUsername).get();
+        if (!usernameSnap.exists) {
+            return res.status(404).json({ error: 'Username not found' });
+        }
+        const { userId, pinHash: storedPinHash } = usernameSnap.data();
+        // Verify PIN
+        const inputPinHash = (0, crypto_1.createHash)('sha256').update(pin + userId).digest('hex');
+        if (inputPinHash !== storedPinHash) {
+            return res.status(401).json({ error: 'Incorrect PIN' });
+        }
+        // Fetch user profile
+        const userSnap = await firebase_1.db.collection('users').doc(userId).get();
+        if (!userSnap.exists) {
+            return res.status(404).json({ error: 'User account not found' });
+        }
+        const userData = userSnap.data();
+        // Create new session
+        const sessionId = (0, uuid_1.v4)();
+        const jwtToken = (0, jwt_1.generateAccessToken)(userId, sessionId);
+        const refreshToken = (0, jwt_1.generateRefreshToken)(userId, sessionId);
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 30);
+        await firebase_1.db.collection('sessions').doc(sessionId).set({
+            sessionId,
+            userId,
+            refreshToken,
+            deviceName: deviceName || 'Web Browser',
+            platform: platform || 'web',
+            ipAddress: req.ip || '0.0.0.0',
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            lastActiveAt: admin.firestore.FieldValue.serverTimestamp(),
+            expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
+            isActive: true,
+        });
+        await firebase_1.db.collection('users').doc(userId).update({
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        // Generate Firebase custom token
+        let firebaseToken = null;
+        try {
+            firebaseToken = await admin.auth().createCustomToken(userId);
+        }
+        catch (e) {
+            console.warn('Could not generate Firebase custom token:', e);
+        }
+        return res.status(200).json({
+            jwt: jwtToken,
+            refreshToken,
+            firebaseToken,
+            user: {
+                userId: userData.userId,
+                username: userData.username,
+                name: userData.name,
+                about: userData.about,
+                profilePhotoUrl: userData.profilePhotoUrl,
+            },
+        });
+    }
+    catch (err) {
+        console.error('Login-user error:', err);
+        return res.status(500).json({ error: 'Internal server error during login' });
     }
 });
 exports.default = router;

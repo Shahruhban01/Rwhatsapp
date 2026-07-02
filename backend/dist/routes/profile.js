@@ -153,7 +153,7 @@ router.get('/', auth_1.requireAuth, async (req, res) => {
 // 4. PUT /api/profile (Update profile metadata name & about)
 router.put('/', auth_1.requireAuth, async (req, res) => {
     const userId = req.user?.userId;
-    const { name, about } = req.body;
+    const { name, about, profilePhotoUrl } = req.body;
     if (!userId) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -165,11 +165,87 @@ router.put('/', auth_1.requireAuth, async (req, res) => {
             updates.name = name;
         if (about !== undefined)
             updates.about = about;
+        if (profilePhotoUrl !== undefined)
+            updates.profilePhotoUrl = profilePhotoUrl;
         await firebase_1.db.collection('users').doc(userId).update(updates);
         return res.status(200).json({ success: true, updates });
     }
     catch (err) {
         console.error('Error updating profile:', err);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+// ─── BLOCK / UNBLOCK ENDPOINTS ──────────────────────────────────────────────
+// 5. POST /api/profile/block (Block a user)
+router.post('/block', auth_1.requireAuth, async (req, res) => {
+    const userId = req.user?.userId;
+    const { targetUserId } = req.body;
+    if (!userId)
+        return res.status(401).json({ error: 'Unauthorized' });
+    if (!targetUserId)
+        return res.status(400).json({ error: 'Target user ID is required' });
+    try {
+        const userRef = firebase_1.db.collection('users').doc(userId);
+        await userRef.update({
+            blockedUserIds: admin.firestore.FieldValue.arrayUnion(targetUserId)
+        });
+        return res.status(200).json({ success: true, message: 'User blocked successfully' });
+    }
+    catch (err) {
+        console.error('Error blocking user:', err);
+        return res.status(500).json({ error: 'Internal server error blocking user' });
+    }
+});
+// 6. POST /api/profile/unblock (Unblock a user)
+router.post('/unblock', auth_1.requireAuth, async (req, res) => {
+    const userId = req.user?.userId;
+    const { targetUserId } = req.body;
+    if (!userId)
+        return res.status(401).json({ error: 'Unauthorized' });
+    if (!targetUserId)
+        return res.status(400).json({ error: 'Target user ID is required' });
+    try {
+        const userRef = firebase_1.db.collection('users').doc(userId);
+        await userRef.update({
+            blockedUserIds: admin.firestore.FieldValue.arrayRemove(targetUserId)
+        });
+        return res.status(200).json({ success: true, message: 'User unblocked successfully' });
+    }
+    catch (err) {
+        console.error('Error unblocking user:', err);
+        return res.status(500).json({ error: 'Internal server error unblocking user' });
+    }
+});
+// 7. GET /api/profile/blocked (Retrieve list of blocked users)
+router.get('/blocked', auth_1.requireAuth, async (req, res) => {
+    const userId = req.user?.userId;
+    if (!userId)
+        return res.status(401).json({ error: 'Unauthorized' });
+    try {
+        const userDoc = await firebase_1.db.collection('users').doc(userId).get();
+        if (!userDoc.exists)
+            return res.status(404).json({ error: 'User not found' });
+        const blockedUserIds = userDoc.data()?.blockedUserIds || [];
+        if (blockedUserIds.length === 0) {
+            return res.status(200).json([]);
+        }
+        const usersSnap = await firebase_1.db.collection('users')
+            .where('userId', 'in', blockedUserIds.slice(0, 10))
+            .get();
+        const blockedProfiles = [];
+        usersSnap.forEach((doc) => {
+            const d = doc.data();
+            blockedProfiles.push({
+                userId: d.userId,
+                name: d.name,
+                username: d.username,
+                profilePhotoUrl: d.profilePhotoUrl || null
+            });
+        });
+        return res.status(200).json(blockedProfiles);
+    }
+    catch (err) {
+        console.error('Error fetching blocked list:', err);
         return res.status(500).json({ error: 'Internal server error' });
     }
 });

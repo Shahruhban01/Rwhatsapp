@@ -4,7 +4,7 @@ import { collection, query, where, onSnapshot, orderBy, doc, getDoc, setDoc } fr
 import { db } from '../services/firebase';
 import { useAuth } from './AuthContext';
 
-const API_URL = 'http://localhost:5000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 export interface Chat {
   chatId: string;
@@ -22,6 +22,8 @@ export interface Chat {
   createdAt: any;
   createdBy: string;
   metadata?: {
+    recipientName: string;
+    recipientUsername: string;
     recipientPhotoUrl: string | null;
   };
   settings?: {
@@ -60,6 +62,7 @@ export interface Message {
   sentAt: any;
   deliveredAt: any;
   readAt: any;
+  reactions?: Record<string, string[]>;
 }
 
 interface ChatContextType {

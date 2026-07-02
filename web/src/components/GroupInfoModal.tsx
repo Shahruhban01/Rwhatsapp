@@ -46,8 +46,6 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({ isOpen, onClose, chatId
       setInviteEnabled(res.data.inviteCodeEnabled);
     }).catch(() => { /* ignore if not admin */ });
 
-    // Fetch group details doc
-    db.collection ? null : getGroupMeta();
 
     // Listen to group members subcollection
     const membersQuery = collection(db, 'groups', chatId, 'members');

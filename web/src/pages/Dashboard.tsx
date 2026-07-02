@@ -16,7 +16,7 @@ import GroupInfoModal from "../components/GroupInfoModal";
 import StoriesPanel from "../components/StoriesPanel";
 import ContactInfoModal from "../components/ContactInfoModal";
 
-const API_URL = "http://localhost:5000/api";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 interface UserRecord {
   userId: string;
@@ -1165,7 +1165,7 @@ const Dashboard: React.FC = () => {
 
                   // Reaction badges
                   const reacts = msg.reactions || {};
-                  const reactionEntries = Object.entries(reacts).filter(([_, list]) => list.length > 0);
+                  const reactionEntries = Object.entries(reacts).filter(([_, list]) => (list as string[]).length > 0);
 
                   return (
                     <div
@@ -1286,7 +1286,7 @@ const Dashboard: React.FC = () => {
                       {reactionEntries.length > 0 && (
                         <div className="flex gap-1 mt-1 bg-black/20 rounded-full py-0.5 px-1.5 self-start select-none">
                           {reactionEntries.map(([emoji, list]) => (
-                            <span key={emoji} className="text-xs" title={`${list.length} reaction(s)`}>
+                            <span key={emoji} className="text-xs" title={`${(list as string[]).length} reaction(s)`}>
                               {emoji}
                             </span>
                           ))}
