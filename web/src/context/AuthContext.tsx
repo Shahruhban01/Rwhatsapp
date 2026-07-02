@@ -22,7 +22,7 @@ interface AuthContextType {
   loginWithAccessKey: (accessKey: string) => Promise<User>;
   logout: () => Promise<void>;
   logoutAll: () => Promise<void>;
-  requestQrSession: () => Promise<{ qrSessionId: string; qrCodeBase64: string; expiresAt: string }>;
+  requestQrSession: () => Promise<{ qrSessionId: string; qrCodeBase64: string; linkCode: string; expiresAt: string }>;
   listenToQrSession: (qrSessionId: string, onStatusChange: (status: string) => void) => () => void;
   validateQrSession: (qrSessionId: string) => Promise<User>;
   setUserProfile: (userOrUpdates: User | Partial<User>) => void;
