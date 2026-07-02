@@ -6,6 +6,8 @@ import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'auth_provider.dart';
 
+import '../config.dart';
+
 final chatProvider = StateNotifierProvider<ChatNotifier, ChatState>((ref) {
   final auth = ref.watch(authProvider);
   return ChatNotifier(auth);
@@ -195,10 +197,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 
   void _initDio() {
-    final baseUrl = defaultTargetPlatform == TargetPlatform.android
-        ? 'http://10.0.2.2:5000/api'
-        : 'http://localhost:5000/api';
-    _dio.options.baseUrl = baseUrl;
+    _dio.options.baseUrl = AppConfig.apiUrl;
     _dio.options.connectTimeout = const Duration(seconds: 5);
     _dio.options.receiveTimeout = const Duration(seconds: 5);
 

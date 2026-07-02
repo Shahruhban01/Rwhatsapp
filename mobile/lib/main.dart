@@ -6,6 +6,7 @@ import 'providers/auth_provider.dart';
 import 'features/auth/login_screen.dart';
 import 'features/auth/username_screen.dart';
 import 'features/auth/qr_scanner_screen.dart';
+import 'features/auth/linked_devices_screen.dart';
 import 'features/chat/dashboard_screen.dart';
 import 'features/chat/chat_screen.dart';
 
@@ -71,6 +72,10 @@ class MyApp extends ConsumerWidget {
         GoRoute(
           path: '/link-device',
           builder: (context, state) => const QrScannerScreen(),
+        ),
+        GoRoute(
+          path: '/linked-devices',
+          builder: (context, state) => const LinkedDevicesScreen(),
         ),
         GoRoute(
           path: '/chat/:chatId',

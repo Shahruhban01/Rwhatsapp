@@ -32,15 +32,31 @@ class DashboardScreen extends ConsumerWidget {
             icon: const Icon(Icons.qr_code_scanner, color: Color(0xFFE9EDEF)),
             tooltip: 'Link Web Device',
           ),
-          IconButton(
-            onPressed: () async {
-              await ref.read(authProvider.notifier).logout();
-              if (context.mounted) {
-                context.go('/login');
+          PopupMenuButton<String>(
+            color: const Color(0xFF222E35),
+            icon: const Icon(Icons.more_vert, color: Color(0xFFE9EDEF)),
+            onSelected: (value) async {
+              if (value == 'linked_devices') {
+                context.push('/linked-devices');
+              } else if (value == 'logout') {
+                await ref.read(authProvider.notifier).logout();
+                if (context.mounted) {
+                  context.go('/login');
+                }
               }
             },
-            icon: const Icon(Icons.logout, color: Color(0xFFE9EDEF)),
-            tooltip: 'Log Out',
+            itemBuilder: (BuildContext context) {
+              return [
+                const PopupMenuItem<String>(
+                  value: 'linked_devices',
+                  child: Text('Linked Devices', style: TextStyle(color: Color(0xFFE9EDEF))),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'logout',
+                  child: Text('Log Out', style: TextStyle(color: Color(0xFFE9EDEF))),
+                ),
+              ];
+            },
           ),
         ],
       ),

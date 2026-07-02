@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config.dart';
+
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   return AuthNotifier();
 });
@@ -12,20 +14,58 @@ class AuthState {
   final String? error;
   final String? jwt;
   final UserModel? user;
+  final List<ActiveSession> sessions;
 
-  AuthState({this.loading = false, this.error, this.jwt, this.user});
+  AuthState({
+    this.loading = false,
+    this.error,
+    this.jwt,
+    this.user,
+    this.sessions = const [],
+  });
 
   AuthState copyWith({
     bool? loading,
     String? error,
     String? jwt,
     UserModel? user,
+    List<ActiveSession>? sessions,
   }) {
     return AuthState(
       loading: loading ?? this.loading,
       error: error,
       jwt: jwt ?? this.jwt,
       user: user ?? this.user,
+      sessions: sessions ?? this.sessions,
+    );
+  }
+}
+
+class ActiveSession {
+  final String sessionId;
+  final String deviceName;
+  final String platform;
+  final String ipAddress;
+  final String? createdAt;
+  final String? lastActiveAt;
+
+  ActiveSession({
+    required this.sessionId,
+    required this.deviceName,
+    required this.platform,
+    required this.ipAddress,
+    this.createdAt,
+    this.lastActiveAt,
+  });
+
+  factory ActiveSession.fromJson(Map<String, dynamic> json) {
+    return ActiveSession(
+      sessionId: json['sessionId'] ?? '',
+      deviceName: json['deviceName'] ?? '',
+      platform: json['platform'] ?? '',
+      ipAddress: json['ipAddress'] ?? '',
+      createdAt: json['createdAt'],
+      lastActiveAt: json['lastActiveAt'],
     );
   }
 }
@@ -80,10 +120,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   void _initDio() {
-    final baseUrl = defaultTargetPlatform == TargetPlatform.android
-        ? 'http://10.0.2.2:5000/api'
-        : 'http://localhost:5000/api';
-    _dio.options.baseUrl = baseUrl;
+    _dio.options.baseUrl = AppConfig.apiUrl;
     _dio.options.connectTimeout = const Duration(seconds: 5);
     _dio.options.receiveTimeout = const Duration(seconds: 5);
 
@@ -104,7 +141,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           final refreshToken = prefs.getString('refreshToken');
           if (refreshToken != null) {
             try {
-              final refreshDio = Dio(BaseOptions(baseUrl: baseUrl));
+              final refreshDio = Dio(BaseOptions(baseUrl: AppConfig.apiUrl));
               final res = await refreshDio.post('/auth/refresh', data: {
                 'refreshToken': refreshToken,
               });
@@ -252,6 +289,30 @@ class AuthNotifier extends StateNotifier<AuthState> {
       });
     } on DioException catch (e) {
       throw e.response?.data['error'] ?? 'Failed to confirm QR login';
+    } catch (e) {
+      throw e.toString();
+    }
+  }
+
+  Future<void> fetchSessions() async {
+    try {
+      final res = await _dio.get('/auth/sessions');
+      final list = (res.data as List).map((x) => ActiveSession.fromJson(x)).toList();
+      state = state.copyWith(sessions: list);
+    } on DioException catch (e) {
+      throw e.response?.data['error'] ?? 'Failed to load linked devices';
+    } catch (e) {
+      throw e.toString();
+    }
+  }
+
+  Future<void> logoutSession(String sessionId) async {
+    try {
+      await _dio.post('/auth/sessions/logout', data: {'sessionId': sessionId});
+      final updated = state.sessions.where((x) => x.sessionId != sessionId).toList();
+      state = state.copyWith(sessions: updated);
+    } on DioException catch (e) {
+      throw e.response?.data['error'] ?? 'Failed to log out device';
     } catch (e) {
       throw e.toString();
     }

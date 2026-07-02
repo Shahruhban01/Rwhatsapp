@@ -45,6 +45,36 @@ const firebase_1 = require("../config/firebase");
 const jwt_1 = require("../utils/jwt");
 const auth_1 = require("../middlewares/auth");
 const router = (0, express_1.Router)();
+// DEBUG FIREBASE CONFIGURATION (SECURE DIAGNOSTIC)
+router.get('/debug-firebase', async (req, res) => {
+    const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    if (!serviceAccountJson) {
+        return res.status(200).json({ error: 'FIREBASE_SERVICE_ACCOUNT_JSON is missing' });
+    }
+    try {
+        const serviceAccount = JSON.parse(serviceAccountJson);
+        const hasPrivateKey = !!serviceAccount.private_key;
+        const privateKeyType = typeof serviceAccount.private_key;
+        const privateKeyLength = serviceAccount.private_key ? serviceAccount.private_key.length : 0;
+        const firstChars = serviceAccount.private_key ? serviceAccount.private_key.slice(0, 30) : '';
+        const containsEscapedNewlines = serviceAccount.private_key ? serviceAccount.private_key.includes('\\n') : false;
+        const containsRealNewlines = serviceAccount.private_key ? serviceAccount.private_key.includes('\n') : false;
+        return res.status(200).json({
+            loadedProjectId: admin.app().options.projectId,
+            serviceAccountProject: serviceAccount.project_id,
+            clientEmail: serviceAccount.client_email,
+            hasPrivateKey,
+            privateKeyType,
+            privateKeyLength,
+            firstChars,
+            containsEscapedNewlines,
+            containsRealNewlines
+        });
+    }
+    catch (err) {
+        return res.status(200).json({ error: 'Failed to parse JSON', details: err.message });
+    }
+});
 // 1. POST /api/auth/access-key (Login with Access Key)
 router.post('/access-key', async (req, res) => {
     const { accessKey, deviceName, platform } = req.body;
@@ -750,6 +780,67 @@ router.post('/login-user', async (req, res) => {
     catch (err) {
         console.error('Login-user error:', err);
         return res.status(500).json({ error: 'Internal server error during login' });
+    }
+});
+// 13. GET /api/auth/sessions (Retrieve all active linked web client sessions)
+router.get('/sessions', auth_1.requireAuth, async (req, res) => {
+    try {
+        const userId = req.user?.userId;
+        if (!userId)
+            return res.status(401).json({ error: 'Unauthorized' });
+        const sessionsSnap = await firebase_1.db.collection('sessions')
+            .where('userId', '==', userId)
+            .where('isActive', '==', true)
+            .get();
+        const now = Date.now();
+        const activeSessions = [];
+        sessionsSnap.forEach((doc) => {
+            const data = doc.data();
+            const expiresAtMs = data.expiresAt ? data.expiresAt.toDate().getTime() : 0;
+            if (expiresAtMs > now) {
+                activeSessions.push({
+                    sessionId: data.sessionId,
+                    deviceName: data.deviceName,
+                    platform: data.platform,
+                    ipAddress: data.ipAddress,
+                    createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null,
+                    lastActiveAt: data.lastActiveAt ? data.lastActiveAt.toDate().toISOString() : null,
+                });
+            }
+        });
+        return res.status(200).json(activeSessions);
+    }
+    catch (err) {
+        console.error('Fetch sessions error:', err);
+        return res.status(500).json({ error: 'Internal server error fetching sessions' });
+    }
+});
+// 14. POST /api/auth/sessions/logout (Revoke/log out a specific linked web client session)
+router.post('/sessions/logout', auth_1.requireAuth, async (req, res) => {
+    try {
+        const userId = req.user?.userId;
+        const { sessionId } = req.body;
+        if (!userId)
+            return res.status(401).json({ error: 'Unauthorized' });
+        if (!sessionId)
+            return res.status(400).json({ error: 'Session ID is required' });
+        const sessionRef = firebase_1.db.collection('sessions').doc(sessionId);
+        const sessionSnap = await sessionRef.get();
+        if (!sessionSnap.exists) {
+            return res.status(404).json({ error: 'Session not found' });
+        }
+        const sessionData = sessionSnap.data();
+        if (sessionData.userId !== userId) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+        await sessionRef.update({
+            isActive: false,
+        });
+        return res.status(200).json({ success: true, message: 'Session logged out successfully' });
+    }
+    catch (err) {
+        console.error('Logout session error:', err);
+        return res.status(500).json({ error: 'Internal server error logging out session' });
     }
 });
 exports.default = router;

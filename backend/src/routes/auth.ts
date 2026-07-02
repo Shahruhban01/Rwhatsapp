@@ -855,4 +855,72 @@ router.post('/login-user', async (req: Request, res: Response) => {
   }
 });
 
+// 13. GET /api/auth/sessions (Retrieve all active linked web client sessions)
+router.get('/sessions', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const sessionsSnap = await db.collection('sessions')
+      .where('userId', '==', userId)
+      .where('isActive', '==', true)
+      .get();
+
+    const now = Date.now();
+    const activeSessions: any[] = [];
+
+    sessionsSnap.forEach((doc) => {
+      const data = doc.data();
+      const expiresAtMs = data.expiresAt ? data.expiresAt.toDate().getTime() : 0;
+      if (expiresAtMs > now) {
+        activeSessions.push({
+          sessionId: data.sessionId,
+          deviceName: data.deviceName,
+          platform: data.platform,
+          ipAddress: data.ipAddress,
+          createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null,
+          lastActiveAt: data.lastActiveAt ? data.lastActiveAt.toDate().toISOString() : null,
+        });
+      }
+    });
+
+    return res.status(200).json(activeSessions);
+  } catch (err) {
+    console.error('Fetch sessions error:', err);
+    return res.status(500).json({ error: 'Internal server error fetching sessions' });
+  }
+});
+
+// 14. POST /api/auth/sessions/logout (Revoke/log out a specific linked web client session)
+router.post('/sessions/logout', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const { sessionId } = req.body;
+
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    if (!sessionId) return res.status(400).json({ error: 'Session ID is required' });
+
+    const sessionRef = db.collection('sessions').doc(sessionId);
+    const sessionSnap = await sessionRef.get();
+
+    if (!sessionSnap.exists) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    const sessionData = sessionSnap.data()!;
+    if (sessionData.userId !== userId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    await sessionRef.update({
+      isActive: false,
+    });
+
+    return res.status(200).json({ success: true, message: 'Session logged out successfully' });
+  } catch (err) {
+    console.error('Logout session error:', err);
+    return res.status(500).json({ error: 'Internal server error logging out session' });
+  }
+});
+
 export default router;
