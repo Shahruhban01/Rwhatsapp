@@ -10,6 +10,9 @@ import 'features/auth/qr_scanner_screen.dart';
 import 'features/auth/linked_devices_screen.dart';
 import 'features/chat/dashboard_screen.dart';
 import 'features/chat/chat_screen.dart';
+import 'features/profile/settings_screen.dart';
+import 'features/profile/profile_settings_screen.dart';
+import 'features/profile/blocked_users_screen.dart';
 
 // Helper class to convert Stream to Listenable for GoRouter
 class GoRouterRefreshStream extends ChangeNotifier {
@@ -80,6 +83,18 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/linked-devices',
         builder: (context, state) => const LinkedDevicesScreen(),
+      ),
+      GoRoute(
+        path: '/settings',
+        builder: (context, state) => const SettingsScreen(),
+      ),
+      GoRoute(
+        path: '/settings/profile',
+        builder: (context, state) => const ProfileSettingsScreen(),
+      ),
+      GoRoute(
+        path: '/settings/blocked',
+        builder: (context, state) => const BlockedUsersScreen(),
       ),
       GoRoute(
         path: '/chat/:chatId',

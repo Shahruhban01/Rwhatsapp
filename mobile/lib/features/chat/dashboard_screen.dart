@@ -42,6 +42,12 @@ class DashboardScreen extends ConsumerWidget {
                     context.push('/linked-devices');
                   }
                 });
+              } else if (value == 'settings') {
+                Future.delayed(Duration.zero, () {
+                  if (context.mounted) {
+                    context.push('/settings');
+                  }
+                });
               } else if (value == 'logout') {
                 await ref.read(authProvider.notifier).logout();
                 if (context.mounted) {
@@ -54,6 +60,10 @@ class DashboardScreen extends ConsumerWidget {
                 const PopupMenuItem<String>(
                   value: 'linked_devices',
                   child: Text('Linked Devices', style: TextStyle(color: Color(0xFFE9EDEF))),
+                ),
+                const PopupMenuItem<String>(
+                  value: 'settings',
+                  child: Text('Settings', style: TextStyle(color: Color(0xFFE9EDEF))),
                 ),
                 const PopupMenuItem<String>(
                   value: 'logout',

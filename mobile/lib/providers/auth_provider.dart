@@ -328,4 +328,66 @@ class AuthNotifier extends StateNotifier<AuthState> {
       throw e.toString();
     }
   }
+
+  Future<void> updateProfileMetadata({String? name, String? about}) async {
+    try {
+      await _dio.put('/profile', data: {
+        if (name != null) 'name': name,
+        if (about != null) 'about': about,
+      });
+      if (state.user != null) {
+        final updatedUser = UserModel(
+          userId: state.user!.userId,
+          username: state.user!.username,
+          name: name ?? state.user!.name,
+          about: about ?? state.user!.about,
+          profilePhotoUrl: state.user!.profilePhotoUrl,
+        );
+        state = state.copyWith(user: updatedUser);
+      }
+    } on DioException catch (e) {
+      throw e.response?.data['error'] ?? 'Failed to update profile';
+    } catch (e) {
+      throw e.toString();
+    }
+  }
+
+  Future<List<UserModel>> fetchBlockedUsers() async {
+    try {
+      final res = await _dio.get('/profile/blocked');
+      return (res.data as List).map((x) {
+        return UserModel(
+          userId: x['userId'] ?? '',
+          username: x['username'] ?? '',
+          name: x['name'] ?? '',
+          about: '',
+          profilePhotoUrl: x['profilePhotoUrl'],
+        );
+      }).toList();
+    } on DioException catch (e) {
+      throw e.response?.data['error'] ?? 'Failed to load blocked contacts';
+    } catch (e) {
+      throw e.toString();
+    }
+  }
+
+  Future<void> blockUser(String targetUserId) async {
+    try {
+      await _dio.post('/profile/block', data: {'targetUserId': targetUserId});
+    } on DioException catch (e) {
+      throw e.response?.data['error'] ?? 'Failed to block user';
+    } catch (e) {
+      throw e.toString();
+    }
+  }
+
+  Future<void> unblockUser(String targetUserId) async {
+    try {
+      await _dio.post('/profile/unblock', data: {'targetUserId': targetUserId});
+    } on DioException catch (e) {
+      throw e.response?.data['error'] ?? 'Failed to unblock user';
+    } catch (e) {
+      throw e.toString();
+    }
+  }
 }
