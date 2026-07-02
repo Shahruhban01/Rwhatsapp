@@ -317,4 +317,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
       throw e.toString();
     }
   }
+
+  Future<String> submitLinkCode(String linkCode) async {
+    try {
+      final res = await _dio.post('/auth/qr/link-code', data: {'linkCode': linkCode});
+      return res.data['qrSessionId'];
+    } on DioException catch (e) {
+      throw e.response?.data['error'] ?? 'Invalid or expired link code';
+    } catch (e) {
+      throw e.toString();
+    }
+  }
 }

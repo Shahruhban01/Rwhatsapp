@@ -269,12 +269,15 @@ router.post('/logout-all', auth_1.requireAuth, async (req, res) => {
 router.post('/qr/request', async (req, res) => {
     const qrSessionId = (0, uuid_1.v4)();
     const expiresAtDate = new Date(Date.now() + 60 * 1000); // 60 seconds expiry
+    // Generate random 8-character code (alphanumeric uppercase)
+    const linkCode = Math.random().toString(36).substring(2, 10).toUpperCase();
     try {
         // Generate QR code data URL (Base64) containing session ID
         const qrCodeBase64 = await qrcode_1.default.toDataURL(qrSessionId);
         // Save to Firestore
         await firebase_1.db.collection('qrSessions').doc(qrSessionId).set({
             qrSessionId,
+            linkCode,
             status: 'pending',
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             expiresAt: admin.firestore.Timestamp.fromDate(expiresAtDate),
@@ -283,11 +286,13 @@ router.post('/qr/request', async (req, res) => {
         // Write to Realtime Database for instant push updates (< 100ms)
         await firebase_1.rtdb.ref(`qrLive/${qrSessionId}`).set({
             status: 'pending',
+            linkCode,
             updatedAt: Date.now()
         });
         return res.status(200).json({
             qrSessionId,
             qrCodeBase64,
+            linkCode,
             expiresAt: expiresAtDate.toISOString()
         });
     }
@@ -331,6 +336,39 @@ router.post('/qr/scan', auth_1.requireAuth, async (req, res) => {
     catch (err) {
         console.error('Error updating QR scan status:', err);
         return res.status(500).json({ error: 'Internal server error during QR scan' });
+    }
+});
+// 6b. POST /api/auth/qr/link-code (Mobile submits linkCode to associate session)
+router.post('/qr/link-code', auth_1.requireAuth, async (req, res) => {
+    const userId = req.user?.userId;
+    const { linkCode } = req.body;
+    if (!userId)
+        return res.status(401).json({ error: 'Unauthorized' });
+    if (!linkCode)
+        return res.status(400).json({ error: 'Link code is required' });
+    try {
+        const qrSnap = await firebase_1.db.collection('qrSessions')
+            .where('linkCode', '==', linkCode.trim().toUpperCase())
+            .where('status', '==', 'pending')
+            .limit(1)
+            .get();
+        if (qrSnap.empty) {
+            return res.status(404).json({ error: 'Invalid or expired link code' });
+        }
+        const qrDoc = qrSnap.docs[0];
+        const qrData = qrDoc.data();
+        const qrSessionId = qrDoc.id;
+        const expiresAt = qrData.expiresAt;
+        if (expiresAt.toDate().getTime() < Date.now()) {
+            return res.status(400).json({ error: 'Link code has expired' });
+        }
+        await qrDoc.ref.update({ status: 'scanned', scannedBy: userId });
+        await firebase_1.rtdb.ref(`qrLive/${qrSessionId}`).update({ status: 'scanned', scannedBy: userId });
+        return res.status(200).json({ qrSessionId, status: 'scanned' });
+    }
+    catch (err) {
+        console.error('Link code verification error:', err);
+        return res.status(500).json({ error: 'Internal server error verifying link code' });
     }
 });
 // 7. POST /api/auth/qr/confirm (Mobile approves QR web login request)

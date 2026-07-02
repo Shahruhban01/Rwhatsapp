@@ -22,27 +22,31 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
   }
 
   Future<void> _handleSimulateScan() async {
-    final qrSessionId = _sessionIdController.text.trim();
-    if (qrSessionId.isEmpty) return;
+    final input = _sessionIdController.text.trim();
+    if (input.isEmpty) return;
 
     setState(() {
       _isLoading = true;
-      _statusMessage = 'Simulating scan...';
+      _statusMessage = 'Linking device...';
       _errorMessage = null;
     });
 
     try {
       final notifier = ref.read(authProvider.notifier);
-      
-      // 1. Notify backend we scanned the QR code (transitions status to 'scanned' on web)
-      await notifier.scanQrCode(qrSessionId);
+      String qrSessionId = input;
+
+      if (input.length <= 12) {
+        qrSessionId = await notifier.submitLinkCode(input);
+      } else {
+        await notifier.scanQrCode(qrSessionId);
+      }
       
       setState(() {
         _isLoading = false;
         _statusMessage = null;
       });
 
-      // 2. Show confirmation prompt to Approve/Deny login
+      // Show confirmation prompt to Approve/Deny login
       if (mounted) {
         showDialog(
           context: context,
@@ -129,7 +133,7 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
             ),
             const SizedBox(height: 24),
             const Text(
-              'Scan QR Code Simulator',
+              'Link with Code or QR',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -138,7 +142,7 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
             ),
             const SizedBox(height: 12),
             const Text(
-              'Since this is running in a simulator, copy the QR Session ID shown on the web client login screen and paste it below to link your browser.',
+              'Enter the 8-character Link Code OR the QR Session ID shown on your browser screen below to link this device.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 13,
@@ -174,12 +178,12 @@ class _QrScannerScreenState extends ConsumerState<QrScannerScreen> {
               const SizedBox(height: 20),
             ],
 
-            // Input for qrSessionId
+            // Input for qrSessionId or LinkCode
             TextField(
               controller: _sessionIdController,
               style: const TextStyle(color: Color(0xFFE9EDEF)),
               decoration: InputDecoration(
-                hintText: 'Paste QR Session ID here',
+                hintText: 'Enter Link Code or Session ID',
                 hintStyle: const TextStyle(color: Color(0xFF8696A0)),
                 filled: true,
                 fillColor: const Color(0xFF202C33),

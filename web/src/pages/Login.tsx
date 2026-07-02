@@ -40,6 +40,7 @@ const Login: React.FC = () => {
   const [fieldError, setFieldError] = useState<Record<string, string>>({});
 
   const [qrCode, setQrCode] = useState<string | null>(null);
+  const [linkCode, setLinkCode] = useState<string | null>(null);
   const [qrStatus, setQrStatus] = useState<'pending' | 'scanned' | 'confirmed' | 'expired' | 'idle'>('idle');
 
   const regPinRefs = [useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null)];
@@ -66,6 +67,7 @@ const Login: React.FC = () => {
         setQrStatus('pending');
         const data = await requestQrSession();
         setQrCode(data.qrCodeBase64);
+        setLinkCode(data.linkCode);
         unsubscribe = listenToQrSession(data.qrSessionId, async (status) => {
           if (status === 'scanned') setQrStatus('scanned');
           else if (status === 'confirmed') {
@@ -484,6 +486,13 @@ const Login: React.FC = () => {
                   </div>
                 )}
               </div>
+
+              {linkCode && qrStatus !== 'expired' && (
+                <div className="mt-4 p-3 bg-[#202c33] rounded-lg inline-block border border-slate-700/50">
+                  <p className="text-[10px] text-[#8696a0] uppercase tracking-wider font-semibold">Link with Code</p>
+                  <p className="text-xl font-bold text-[#00a884] tracking-widest mt-1 font-mono">{linkCode}</p>
+                </div>
+              )}
             </div>
           )}
         </div>
