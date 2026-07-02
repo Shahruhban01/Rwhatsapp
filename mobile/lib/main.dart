@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +10,87 @@ import 'features/auth/qr_scanner_screen.dart';
 import 'features/auth/linked_devices_screen.dart';
 import 'features/chat/dashboard_screen.dart';
 import 'features/chat/chat_screen.dart';
+
+// Helper class to convert Stream to Listenable for GoRouter
+class GoRouterRefreshStream extends ChangeNotifier {
+  GoRouterRefreshStream(Stream stream) {
+    notifyListeners();
+    _subscription = stream.asBroadcastStream().listen((_) => notifyListeners());
+  }
+
+  late final StreamSubscription _subscription;
+
+  @override
+  void dispose() {
+    _subscription.cancel();
+    super.dispose();
+  }
+}
+
+// Router provider to avoid re-creation of GoRouter instance on rebuild
+final routerProvider = Provider<GoRouter>((ref) {
+  final listenable = GoRouterRefreshStream(ref.read(authProvider.notifier).stream);
+  ref.onDispose(() => listenable.dispose());
+
+  return GoRouter(
+    initialLocation: ref.read(authProvider).jwt != null ? '/dashboard' : '/login',
+    refreshListenable: listenable,
+    redirect: (context, state) {
+      final authState = ref.read(authProvider);
+      final loggedIn = authState.jwt != null;
+      final user = authState.user;
+      final goingToLogin = state.matchedLocation == '/login';
+
+      // 1. If not logged in and not going to login page, send to login
+      if (!loggedIn && !goingToLogin) {
+        return '/login';
+      }
+
+      // 2. If logged in but username is not configured, redirect to username setup
+      if (loggedIn) {
+        final hasNoUsername = user != null && user.username.isEmpty;
+        if (hasNoUsername && state.matchedLocation != '/setup-username') {
+          return '/setup-username';
+        }
+        // If already has username, don't let them stay on setup or login
+        if (!hasNoUsername && (goingToLogin || state.matchedLocation == '/setup-username')) {
+          return '/dashboard';
+        }
+      }
+
+      return null;
+    },
+    routes: [
+      GoRoute(
+        path: '/login',
+        builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/setup-username',
+        builder: (context, state) => const UsernameScreen(),
+      ),
+      GoRoute(
+        path: '/dashboard',
+        builder: (context, state) => const DashboardScreen(),
+      ),
+      GoRoute(
+        path: '/link-device',
+        builder: (context, state) => const QrScannerScreen(),
+      ),
+      GoRoute(
+        path: '/linked-devices',
+        builder: (context, state) => const LinkedDevicesScreen(),
+      ),
+      GoRoute(
+        path: '/chat/:chatId',
+        builder: (context, state) {
+          final chatId = state.pathParameters['chatId']!;
+          return ChatScreen(chatId: chatId);
+        },
+      ),
+    ],
+  );
+});
 
 void main() async {
   // 1. Initialize Firebase with Emulators configuration
@@ -27,65 +109,7 @@ class MyApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final authState = ref.watch(authProvider);
-
-    // Setup router
-    final router = GoRouter(
-      initialLocation: authState.jwt != null ? '/dashboard' : '/login',
-      redirect: (context, state) {
-        final loggedIn = ref.read(authProvider).jwt != null;
-        final user = ref.read(authProvider).user;
-        final goingToLogin = state.matchedLocation == '/login';
-
-        // 1. If not logged in and not going to login page, send to login
-        if (!loggedIn && !goingToLogin) {
-          return '/login';
-        }
-
-        // 2. If logged in but username is not configured, redirect to username setup
-        if (loggedIn) {
-          final hasNoUsername = user != null && user.username.isEmpty;
-          if (hasNoUsername && state.matchedLocation != '/setup-username') {
-            return '/setup-username';
-          }
-          // If already has username, don't let them stay on setup or login
-          if (!hasNoUsername && (goingToLogin || state.matchedLocation == '/setup-username')) {
-            return '/dashboard';
-          }
-        }
-
-        return null;
-      },
-      routes: [
-        GoRoute(
-          path: '/login',
-          builder: (context, state) => const LoginScreen(),
-        ),
-        GoRoute(
-          path: '/setup-username',
-          builder: (context, state) => const UsernameScreen(),
-        ),
-        GoRoute(
-          path: '/dashboard',
-          builder: (context, state) => const DashboardScreen(),
-        ),
-        GoRoute(
-          path: '/link-device',
-          builder: (context, state) => const QrScannerScreen(),
-        ),
-        GoRoute(
-          path: '/linked-devices',
-          builder: (context, state) => const LinkedDevicesScreen(),
-        ),
-        GoRoute(
-          path: '/chat/:chatId',
-          builder: (context, state) {
-            final chatId = state.pathParameters['chatId']!;
-            return ChatScreen(chatId: chatId);
-          },
-        ),
-      ],
-    );
+    final router = ref.watch(routerProvider);
 
     return MaterialApp.router(
       title: 'WhatsApp Clone',
