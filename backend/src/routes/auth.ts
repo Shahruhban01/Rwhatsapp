@@ -13,6 +13,37 @@ import { requireAuth, AuthenticatedRequest } from '../middlewares/auth';
 
 const router = Router();
 
+// DEBUG FIREBASE CONFIGURATION (SECURE DIAGNOSTIC)
+router.get('/debug-firebase', async (req: Request, res: Response) => {
+  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (!serviceAccountJson) {
+    return res.status(200).json({ error: 'FIREBASE_SERVICE_ACCOUNT_JSON is missing' });
+  }
+  try {
+    const serviceAccount = JSON.parse(serviceAccountJson);
+    const hasPrivateKey = !!serviceAccount.private_key;
+    const privateKeyType = typeof serviceAccount.private_key;
+    const privateKeyLength = serviceAccount.private_key ? serviceAccount.private_key.length : 0;
+    const firstChars = serviceAccount.private_key ? serviceAccount.private_key.slice(0, 30) : '';
+    const containsEscapedNewlines = serviceAccount.private_key ? serviceAccount.private_key.includes('\\n') : false;
+    const containsRealNewlines = serviceAccount.private_key ? serviceAccount.private_key.includes('\n') : false;
+
+    return res.status(200).json({
+      loadedProjectId: admin.app().options.projectId,
+      serviceAccountProject: serviceAccount.project_id,
+      clientEmail: serviceAccount.client_email,
+      hasPrivateKey,
+      privateKeyType,
+      privateKeyLength,
+      firstChars,
+      containsEscapedNewlines,
+      containsRealNewlines
+    });
+  } catch (err: any) {
+    return res.status(200).json({ error: 'Failed to parse JSON', details: err.message });
+  }
+});
+
 // 1. POST /api/auth/access-key (Login with Access Key)
 router.post('/access-key', async (req: Request, res: Response) => {
   const { accessKey, deviceName, platform } = req.body;
