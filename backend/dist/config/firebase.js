@@ -67,6 +67,9 @@ if (admin.apps.length === 0) {
         if (serviceAccountJson) {
             try {
                 const serviceAccount = JSON.parse(serviceAccountJson);
+                if (serviceAccount.private_key) {
+                    serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+                }
                 admin.initializeApp({
                     credential: admin.credential.cert(serviceAccount),
                     databaseURL: process.env.FIREBASE_DATABASE_URL,
