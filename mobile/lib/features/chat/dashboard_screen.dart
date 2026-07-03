@@ -8,6 +8,7 @@ import '../../providers/chat_provider.dart';
 import '../../providers/status_provider.dart';
 import 'search_user_dialog.dart';
 import 'status_viewer_screen.dart';
+import 'status_preview_screen.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -46,13 +47,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   Future<void> _pickImageStatus() async {
     final picker = ImagePicker();
-    final image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+    final image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 75);
     if (image == null) return;
 
-    // Direct simulate upload or R2 upload since we have /api/storage/upload
-    // For simplicity, we can call upload R2 or simulate it, let's upload using authNotifier's dio if possible,
-    // wait, we can just call upload API from chatProvider or storage!
-    // Let's check how image uploading is handled in chat_screen.dart.
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => StatusPreviewScreen(
+            imagePath: image.path,
+            imageName: image.name,
+          ),
+        ),
+      );
+    }
   }
 
   void _showChatOptions(ChatModel chat) {
@@ -388,39 +396,115 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Widget _buildCommunitiesTab() {
-    return SingleChildScrollView(
-      child: Column(
-        children: [
-          const SizedBox(height: 40),
-          Icon(Icons.groups, size: 100, color: const Color(0xFF8696A0).withOpacity(0.2)),
-          const SizedBox(height: 24),
-          const Text(
-            'Stay connected with a community',
-            style: TextStyle(color: Color(0xFFE9EDEF), fontSize: 18, fontWeight: FontWeight.bold),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 12),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 32.0),
-            child: Text(
-              'Communities bring members together in topic-based groups, and make it easy to send announcements.',
-              style: TextStyle(color: Color(0xFF8696A0), fontSize: 13, height: 1.4),
-              textAlign: TextAlign.center,
+    return ListView(
+      children: [
+        // New Community Item
+        ListTile(
+          leading: Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: const Color(0xFF00A884).withOpacity(0.15),
+              borderRadius: BorderRadius.circular(12),
             ),
+            child: const Icon(Icons.add_to_photos, color: Color(0xFF00A884)),
           ),
-          const SizedBox(height: 32),
-          ElevatedButton(
-            onPressed: () {},
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF00A884),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-            ),
-            child: const Text('Start your community', style: TextStyle(fontWeight: FontWeight.bold)),
-          )
-        ],
-      ),
+          title: const Text('New Community', style: TextStyle(color: Color(0xFFE9EDEF), fontWeight: FontWeight.bold)),
+          onTap: () {},
+        ),
+        const Divider(height: 1, color: Color(0xFF202C33)),
+
+        // Mock Community 1
+        Container(
+          color: const Color(0xFF111B21),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ListTile(
+                leading: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2A3942),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.groups, color: Color(0xFF8696A0)),
+                ),
+                title: const Text('Rwhatsapp Developer Workspace', style: TextStyle(color: Color(0xFFE9EDEF), fontWeight: FontWeight.bold)),
+                subtitle: const Text('Announcement group for developers', style: TextStyle(color: Color(0xFF8696A0), fontSize: 13)),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(left: 72.0),
+                child: Divider(height: 1, color: Color(0xFF202C33)),
+              ),
+              ListTile(
+                contentPadding: const EdgeInsets.only(left: 72, right: 16),
+                leading: const CircleAvatar(
+                  backgroundColor: Color(0xFF202C33),
+                  radius: 16,
+                  child: Icon(Icons.campaign, color: Color(0xFF00A884), size: 18),
+                ),
+                title: const Text('Announcements', style: TextStyle(color: Color(0xFFE9EDEF), fontSize: 14, fontWeight: FontWeight.w500)),
+                subtitle: const Text('Ruhban: Welcome to the new app version!', style: TextStyle(color: Color(0xFF8696A0), fontSize: 12)),
+                trailing: const Text('10:45 AM', style: TextStyle(color: Color(0xFF8696A0), fontSize: 11)),
+                onTap: () {},
+              ),
+              ListTile(
+                contentPadding: const EdgeInsets.only(left: 72, right: 16),
+                leading: const CircleAvatar(
+                  backgroundColor: Color(0xFF202C33),
+                  radius: 16,
+                  child: Icon(Icons.chat_bubble_outline, color: Color(0xFF8696A0), size: 18),
+                ),
+                title: const Text('General chat', style: TextStyle(color: Color(0xFFE9EDEF), fontSize: 14, fontWeight: FontWeight.w500)),
+                subtitle: const Text('Basita: Let\'s test document sharing', style: TextStyle(color: Color(0xFF8696A0), fontSize: 12)),
+                trailing: const Text('Yesterday', style: TextStyle(color: Color(0xFF8696A0), fontSize: 11)),
+                onTap: () {},
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 8, color: Color(0xFF0B141A)),
+
+        // Mock Community 2
+        Container(
+          color: const Color(0xFF111B21),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ListTile(
+                leading: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2A3942),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.palette, color: Color(0xFF8696A0)),
+                ),
+                title: const Text('UI/UX Design Studio', style: TextStyle(color: Color(0xFFE9EDEF), fontWeight: FontWeight.bold)),
+                subtitle: const Text('Figma design systems and resources', style: TextStyle(color: Color(0xFF8696A0), fontSize: 13)),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(left: 72.0),
+                child: Divider(height: 1, color: Color(0xFF202C33)),
+              ),
+              ListTile(
+                contentPadding: const EdgeInsets.only(left: 72, right: 16),
+                leading: const CircleAvatar(
+                  backgroundColor: Color(0xFF202C33),
+                  radius: 16,
+                  child: Icon(Icons.campaign, color: Color(0xFF00A884), size: 18),
+                ),
+                title: const Text('Announcements', style: TextStyle(color: Color(0xFFE9EDEF), fontSize: 14, fontWeight: FontWeight.w500)),
+                subtitle: const Text('Dala: Status viewing design polished', style: TextStyle(color: Color(0xFF8696A0), fontSize: 12)),
+                trailing: const Text('Wednesday', style: TextStyle(color: Color(0xFF8696A0), fontSize: 11)),
+                onTap: () {},
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -455,6 +539,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final chatState = ref.watch(chatProvider);
     final statusState = ref.watch(statusProvider);
     final currentUser = authState.user;
+
+    final unreadChatsCount = chatState.chats.where((chat) {
+      return chat.lastMessage != null &&
+          chat.lastMessage!['senderId'] != currentUser?.userId &&
+          chat.lastMessage!['status'] != 'read';
+    }).length;
+
+    final hasUnviewedStatus = statusState.statuses
+        .where((x) => x.userId != currentUser?.userId)
+        .any((s) => s.stories.any((story) => !story.views.contains(currentUser?.userId)));
 
     Widget body;
     switch (_currentTab) {
@@ -541,23 +635,35 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         type: BottomNavigationBarType.fixed,
         selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
         unselectedLabelStyle: const TextStyle(fontSize: 12),
-        items: const [
+        items: [
           BottomNavigationBarItem(
-            icon: Icon(Icons.chat),
-            activeIcon: Icon(Icons.chat, color: Color(0xFF00A884)),
+            icon: unreadChatsCount > 0
+                ? Badge(
+                    label: Text('$unreadChatsCount'),
+                    backgroundColor: const Color(0xFF00A884),
+                    textColor: Colors.white,
+                    child: const Icon(Icons.chat),
+                  )
+                : const Icon(Icons.chat),
+            activeIcon: const Icon(Icons.chat, color: Color(0xFF00A884)),
             label: 'Chats',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.update),
-            activeIcon: Icon(Icons.update, color: Color(0xFF00A884)),
+            icon: hasUnviewedStatus
+                ? const Badge(
+                    backgroundColor: Color(0xFF00A884),
+                    child: Icon(Icons.update),
+                  )
+                : const Icon(Icons.update),
+            activeIcon: const Icon(Icons.update, color: Color(0xFF00A884)),
             label: 'Updates',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.groups),
             activeIcon: Icon(Icons.groups, color: Color(0xFF00A884)),
             label: 'Communities',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.call),
             activeIcon: Icon(Icons.call, color: Color(0xFF00A884)),
             label: 'Calls',

@@ -113,6 +113,46 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
   }
 });
 
+// Create a group chat
+router.post('/group', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user?.userId;
+  const { groupName, participantIds } = req.body;
+
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  if (!groupName || !participantIds || !Array.isArray(participantIds) || participantIds.length === 0) {
+    return res.status(400).json({ error: 'groupName and a non-empty participantIds array are required' });
+  }
+
+  try {
+    const allParticipantIds = Array.from(new Set([userId, ...participantIds]));
+
+    const chatId = uuidv4();
+    const newChat = {
+      chatId,
+      type: 'group',
+      participantIds: allParticipantIds,
+      lastMessage: null,
+      lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdBy: userId,
+      metadata: {
+        groupName: groupName
+      }
+    };
+
+    await db.collection('chats').doc(chatId).set(newChat);
+
+    const createdDoc = await db.collection('chats').doc(chatId).get();
+    return res.status(201).json({ chatId: createdDoc.id, ...createdDoc.data() });
+  } catch (err) {
+    console.error('Error starting group chat:', err);
+    return res.status(500).json({ error: 'Internal server error starting group chat' });
+  }
+});
+
 // 3. POST /api/chats/:chatId/messages (Send a message)
 router.post('/:chatId/messages', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.userId;

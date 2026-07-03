@@ -17,6 +17,8 @@ class _StatusViewerScreenState extends ConsumerState<StatusViewerScreen> {
   double _percent = 0.0;
   Timer? _timer;
 
+  bool _isPaused = false;
+
   @override
   void initState() {
     super.initState();
@@ -32,6 +34,7 @@ class _StatusViewerScreenState extends ConsumerState<StatusViewerScreen> {
     ref.read(statusProvider.notifier).viewStatus(currentStory.storyId);
 
     _timer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+      if (_isPaused) return;
       setState(() {
         if (_percent < 1.0) {
           _percent += 0.01; // 50ms * 100 = 5 seconds
@@ -86,7 +89,18 @@ class _StatusViewerScreenState extends ConsumerState<StatusViewerScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       body: GestureDetector(
+        onLongPressStart: (_) {
+          setState(() {
+            _isPaused = true;
+          });
+        },
+        onLongPressEnd: (_) {
+          setState(() {
+            _isPaused = false;
+          });
+        },
         onTapDown: (details) {
+          if (_isPaused) return;
           final width = MediaQuery.of(context).size.width;
           if (details.globalPosition.dx < width / 3) {
             _previousStory();

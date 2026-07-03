@@ -335,6 +335,26 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
   }
 
+  Future<String> startGroupChat(String groupName, List<String> participantIds) async {
+    state = state.copyWith(loadingChats: true);
+    try {
+      final res = await _dio.post('/chats/group', data: {
+        'groupName': groupName,
+        'participantIds': participantIds,
+      });
+      final chatId = res.data['chatId'];
+      selectChat(chatId);
+      return chatId;
+    } on DioException catch (e) {
+      final errMsg = e.response?.data['error'] ?? 'Failed to start group chat';
+      state = state.copyWith(loadingChats: false, error: errMsg);
+      throw errMsg;
+    } catch (e) {
+      state = state.copyWith(loadingChats: false, error: e.toString());
+      throw e.toString();
+    }
+  }
+
   Future<void> sendTextMessage(String text) async {
     final chatId = state.activeChatId;
     if (chatId == null || _authState.user == null) return;
