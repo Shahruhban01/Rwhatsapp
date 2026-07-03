@@ -58,6 +58,7 @@ class ChatModel {
   final DateTime createdAt;
   final String createdBy;
   final Map<String, dynamic>? metadata;
+  final List<String> archivedByUserIds;
 
   ChatModel({
     required this.chatId,
@@ -68,6 +69,7 @@ class ChatModel {
     required this.createdAt,
     required this.createdBy,
     this.metadata,
+    this.archivedByUserIds = const [],
   });
 
   factory ChatModel.fromFirestore(DocumentSnapshot doc) {
@@ -85,6 +87,7 @@ class ChatModel {
           : DateTime.now(),
       createdBy: data['createdBy'] ?? '',
       metadata: data['metadata'],
+      archivedByUserIds: List<String>.from(data['archivedByUserIds'] ?? []),
     );
   }
 }
@@ -414,6 +417,26 @@ class ChatNotifier extends StateNotifier<ChatState> {
       await _dio.post('/chats/$chatId/messages/$messageId/react', data: {'reaction': emoji});
     } on DioException catch (e) {
       throw e.response?.data['error'] ?? 'Failed to react to message';
+    } catch (e) {
+      throw e.toString();
+    }
+  }
+
+  Future<void> archiveChat(String chatId) async {
+    try {
+      await _dio.post('/chats/$chatId/archive');
+    } on DioException catch (e) {
+      throw e.response?.data['error'] ?? 'Failed to archive chat';
+    } catch (e) {
+      throw e.toString();
+    }
+  }
+
+  Future<void> unarchiveChat(String chatId) async {
+    try {
+      await _dio.post('/chats/$chatId/unarchive');
+    } on DioException catch (e) {
+      throw e.response?.data['error'] ?? 'Failed to unarchive chat';
     } catch (e) {
       throw e.toString();
     }

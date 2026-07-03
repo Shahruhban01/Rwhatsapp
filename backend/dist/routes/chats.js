@@ -910,4 +910,40 @@ router.get('/:chatId/members', auth_1.requireAuth, async (req, res) => {
         return res.status(500).json({ error: 'Internal server error' });
     }
 });
+// 23. POST /api/chats/:chatId/archive (Archive a chat)
+router.post('/:chatId/archive', auth_1.requireAuth, async (req, res) => {
+    const userId = req.user?.userId;
+    const { chatId } = req.params;
+    if (!userId)
+        return res.status(401).json({ error: 'Unauthorized' });
+    try {
+        const chatRef = firebase_1.db.collection('chats').doc(chatId);
+        await chatRef.update({
+            archivedByUserIds: admin.firestore.FieldValue.arrayUnion(userId)
+        });
+        return res.status(200).json({ success: true, message: 'Chat archived successfully' });
+    }
+    catch (err) {
+        console.error('Error archiving chat:', err);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+// 24. POST /api/chats/:chatId/unarchive (Unarchive a chat)
+router.post('/:chatId/unarchive', auth_1.requireAuth, async (req, res) => {
+    const userId = req.user?.userId;
+    const { chatId } = req.params;
+    if (!userId)
+        return res.status(401).json({ error: 'Unauthorized' });
+    try {
+        const chatRef = firebase_1.db.collection('chats').doc(chatId);
+        await chatRef.update({
+            archivedByUserIds: admin.firestore.FieldValue.arrayRemove(userId)
+        });
+        return res.status(200).json({ success: true, message: 'Chat unarchived successfully' });
+    }
+    catch (err) {
+        console.error('Error unarchiving chat:', err);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
 exports.default = router;

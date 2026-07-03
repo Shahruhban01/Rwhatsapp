@@ -13,6 +13,8 @@ import 'features/chat/chat_screen.dart';
 import 'features/profile/settings_screen.dart';
 import 'features/profile/profile_settings_screen.dart';
 import 'features/profile/blocked_users_screen.dart';
+import 'features/chat/archived_chats_screen.dart';
+import 'features/chat/status_creator_screen.dart';
 
 // Helper class to convert Stream to Listenable for GoRouter
 class GoRouterRefreshStream extends ChangeNotifier {
@@ -95,6 +97,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/settings/blocked',
         builder: (context, state) => const BlockedUsersScreen(),
+      ),
+      GoRoute(
+        path: '/archived-chats',
+        builder: (context, state) => const ArchivedChatsScreen(),
+      ),
+      GoRoute(
+        path: '/status/create',
+        builder: (context, state) => const StatusCreatorScreen(),
       ),
       GoRoute(
         path: '/chat/:chatId',

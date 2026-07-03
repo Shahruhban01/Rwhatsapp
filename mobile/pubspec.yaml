@@ -22,11 +22,20 @@ dependencies:
   image_picker: ^1.0.7
   path_provider: ^2.1.2
   mobile_scanner: ^7.2.0
+  file_picker: ^11.0.2
+  url_launcher: ^6.3.2
+  intl: ^0.20.3
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app-icon.png"
 
 flutter:
   uses-material-design: true

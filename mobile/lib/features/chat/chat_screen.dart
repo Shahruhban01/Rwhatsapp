@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 
@@ -114,6 +116,38 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
+  Future<void> _pickAndSendDocument() async {
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'ppt', 'pptx'],
+      );
+      if (result == null || result.files.single.path == null) return;
+
+      final file = result.files.single;
+      final path = file.path!;
+
+      setState(() => _isUploading = true);
+
+      final uploadRes = await ref.read(chatProvider.notifier).uploadFile(path, file.name);
+      final url = uploadRes['url'];
+      final size = uploadRes['fileSize'] ?? file.size;
+
+      await ref.read(chatProvider.notifier).sendMediaMessage(url, 'document', file.name, size);
+      Timer(const Duration(milliseconds: 100), _scrollToBottom);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Document send failed: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
+    }
+  }
+
   void _showAttachmentMenu() {
     showModalBottomSheet(
       context: context,
@@ -136,6 +170,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               onTap: () {
                 Navigator.pop(context);
                 _pickAndSendMedia(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.insert_drive_file, color: Color(0xFF00A884)),
+              title: const Text('Document', style: TextStyle(color: Color(0xFFE9EDEF))),
+              onTap: () {
+                Navigator.pop(context);
+                _pickAndSendDocument();
               },
             ),
           ],
@@ -386,6 +428,49 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                             height: 150,
                                             color: Colors.black26,
                                             child: const Icon(Icons.broken_image, color: Colors.grey),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                    ],
+                                    if (msg.type == 'document' && msg.mediaUrl != null) ...[
+                                      GestureDetector(
+                                        onTap: () async {
+                                          final uri = Uri.parse(msg.mediaUrl!);
+                                          if (await canLaunchUrl(uri)) {
+                                            await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                          }
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black26,
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.insert_drive_file, color: Color(0xFF00A884), size: 36),
+                                              const SizedBox(width: 10),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      msg.content.isNotEmpty ? msg.content : 'Document',
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                                    ),
+                                                    const SizedBox(height: 2),
+                                                    Text(
+                                                      msg.mediaSize != null ? '${(msg.mediaSize! / 1024).toStringAsFixed(1)} KB' : '',
+                                                      style: const TextStyle(color: Colors.white60, fontSize: 11),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const Icon(Icons.download, color: Colors.white70),
+                                            ],
                                           ),
                                         ),
                                       ),
