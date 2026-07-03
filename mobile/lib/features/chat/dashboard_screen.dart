@@ -622,53 +622,73 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         ],
       ),
       body: body,
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentTab,
-        onTap: (index) {
-          setState(() {
-            _currentTab = index;
-          });
-        },
-        backgroundColor: const Color(0xFF202C33),
-        selectedItemColor: const Color(0xFF00A884),
-        unselectedItemColor: const Color(0xFF8696A0),
-        type: BottomNavigationBarType.fixed,
-        selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-        unselectedLabelStyle: const TextStyle(fontSize: 12),
-        items: [
-          BottomNavigationBarItem(
-            icon: unreadChatsCount > 0
-                ? Badge(
-                    label: Text('$unreadChatsCount'),
-                    backgroundColor: const Color(0xFF00A884),
-                    textColor: Colors.white,
-                    child: const Icon(Icons.chat),
-                  )
-                : const Icon(Icons.chat),
-            activeIcon: const Icon(Icons.chat, color: Color(0xFF00A884)),
-            label: 'Chats',
-          ),
-          BottomNavigationBarItem(
-            icon: hasUnviewedStatus
-                ? const Badge(
-                    backgroundColor: Color(0xFF00A884),
-                    child: Icon(Icons.update),
-                  )
-                : const Icon(Icons.update),
-            activeIcon: const Icon(Icons.update, color: Color(0xFF00A884)),
-            label: 'Updates',
-          ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.groups),
-            activeIcon: Icon(Icons.groups, color: Color(0xFF00A884)),
-            label: 'Communities',
-          ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.call),
-            activeIcon: Icon(Icons.call, color: Color(0xFF00A884)),
-            label: 'Calls',
-          ),
-        ],
+      bottomNavigationBar: NavigationBarTheme(
+        data: NavigationBarThemeData(
+          indicatorColor: const Color(0xFF103629),
+          labelTextStyle: MaterialStateProperty.resolveWith((states) {
+            if (states.contains(MaterialState.selected)) {
+              return const TextStyle(
+                color: Color(0xFFE9EDEF),
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              );
+            }
+            return const TextStyle(
+              color: Color(0xFF8696A0),
+              fontSize: 12,
+            );
+          }),
+          iconTheme: MaterialStateProperty.resolveWith((states) {
+            if (states.contains(MaterialState.selected)) {
+              return const IconThemeData(color: Color(0xFFE9EDEF));
+            }
+            return const IconThemeData(color: Color(0xFF8696A0));
+          }),
+        ),
+        child: NavigationBar(
+          selectedIndex: _currentTab,
+          onDestinationSelected: (index) {
+            setState(() {
+              _currentTab = index;
+            });
+          },
+          backgroundColor: const Color(0xFF0B141A),
+          height: 65,
+          destinations: [
+            NavigationDestination(
+              icon: unreadChatsCount > 0
+                  ? Badge(
+                      label: Text('$unreadChatsCount'),
+                      backgroundColor: const Color(0xFF00A884),
+                      textColor: Colors.white,
+                      child: const Icon(Icons.chat_bubble_outline),
+                    )
+                  : const Icon(Icons.chat_bubble_outline),
+              selectedIcon: const Icon(Icons.chat_bubble),
+              label: 'Chats',
+            ),
+            NavigationDestination(
+              icon: hasUnviewedStatus
+                  ? const Badge(
+                      backgroundColor: Color(0xFF00A884),
+                      child: Icon(Icons.update),
+                    )
+                  : const Icon(Icons.update),
+              selectedIcon: const Icon(Icons.update),
+              label: 'Updates',
+            ),
+            const NavigationDestination(
+              icon: Icon(Icons.groups_outlined),
+              selectedIcon: Icon(Icons.groups),
+              label: 'Communities',
+            ),
+            const NavigationDestination(
+              icon: Icon(Icons.call_outlined),
+              selectedIcon: Icon(Icons.call),
+              label: 'Calls',
+            ),
+          ],
+        ),
       ),
       floatingActionButton: _currentTab == 0
           ? FloatingActionButton(

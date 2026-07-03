@@ -210,4 +210,26 @@ class StatusNotifier extends StateNotifier<StatusState> {
       state = state.copyWith(statuses: updated);
     } catch (_) {}
   }
+
+  Future<void> deleteStatus(String storyId) async {
+    try {
+      await _dio.delete('/stories/$storyId');
+      // Update local state by removing the story
+      final updated = state.statuses.map((u) {
+        final storiesUpdated = u.stories.where((s) => s.storyId != storyId).toList();
+        return UserStatusModel(
+          userId: u.userId,
+          name: u.name,
+          username: u.username,
+          profilePhotoUrl: u.profilePhotoUrl,
+          stories: storiesUpdated,
+        );
+      }).where((u) => u.stories.isNotEmpty).toList();
+      state = state.copyWith(statuses: updated);
+    } on DioException catch (e) {
+      throw e.response?.data['error'] ?? 'Failed to delete status';
+    } catch (e) {
+      throw e.toString();
+    }
+  }
 }

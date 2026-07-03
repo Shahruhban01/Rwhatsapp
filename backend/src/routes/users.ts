@@ -1,4 +1,4 @@
-﻿import { Router, Response } from 'express';
+import { Router, Response } from 'express';
 import { db } from '../config/firebase';
 import { requireAuth, AuthenticatedRequest } from '../middlewares/auth';
 
@@ -42,6 +42,28 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
     return res.status(200).json(users);
   } catch (err) {
     console.error('Error listing users:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/users/:userId  — get details for a specific user
+router.get('/:userId', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.params.userId;
+  try {
+    const userDoc = await db.collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    const d = userDoc.data();
+    return res.status(200).json({
+      userId: d?.userId,
+      username: d?.username,
+      name: d?.name,
+      profilePhotoUrl: d?.profilePhotoUrl || null,
+      about: d?.about || '',
+    });
+  } catch (err) {
+    console.error('Error fetching user details:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
