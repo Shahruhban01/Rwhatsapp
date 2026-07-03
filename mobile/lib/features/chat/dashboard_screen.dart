@@ -672,6 +672,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       ),
       floatingActionButton: _currentTab == 0
           ? FloatingActionButton(
+              heroTag: 'chats_message_fab',
               onPressed: () async {
                 final resultChatId = await showDialog<String>(
                   context: context,
@@ -691,6 +692,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     FloatingActionButton.small(
+                      heroTag: 'status_edit_fab',
                       onPressed: () => context.push('/status/create'),
                       backgroundColor: const Color(0xFF202C33),
                       foregroundColor: const Color(0xFF00A884),
@@ -698,6 +700,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     ),
                     const SizedBox(height: 12),
                     FloatingActionButton(
+                      heroTag: 'status_camera_fab',
                       onPressed: _pickImageStatus,
                       backgroundColor: const Color(0xFF00A884),
                       foregroundColor: Colors.white,

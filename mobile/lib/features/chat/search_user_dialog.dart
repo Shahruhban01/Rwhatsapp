@@ -308,7 +308,7 @@ class _SearchUserDialogState extends ConsumerState<SearchUserDialog> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Text(
-            '${displayUsers.length} user${displayUsers.length != 1 ? \'s\' : \'\'} on this server',
+            '${displayUsers.length} user${displayUsers.length != 1 ? "s" : ""} on this server',
             style: const TextStyle(
               color: Color(0xFF00A884),
               fontSize: 11,
