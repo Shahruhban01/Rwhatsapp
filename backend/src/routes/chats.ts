@@ -1179,18 +1179,6 @@ async function generateAiResponse(chatId: string) {
     return;
   }
 
-  const model = 'google/gemma-2-9b-it:free';
-  const payload = {
-    model: model,
-    messages: [
-      {
-        role: 'system',
-        content: 'You are Meta AI, a helpful, intelligent assistant integrated into a WhatsApp clone chat. Keep your answers clear, concise, and friendly. Use markdown formatting appropriately.'
-      },
-      ...chatHistory
-    ]
-  };
-
   const headers = {
     'Authorization': `Bearer ${openRouterKey}`,
     'HTTP-Referer': 'https://github.com/Shahruhban01/Rwhatsapp',
@@ -1198,18 +1186,49 @@ async function generateAiResponse(chatId: string) {
   };
 
   try {
-    const res = await httpsPost('https://openrouter.ai/api/v1/chat/completions', headers, payload);
-    
-    let aiReply = "I'm sorry, I couldn't generate a response.";
-    if (res && res.choices && res.choices[0] && res.choices[0].message) {
-      aiReply = res.choices[0].message.content || aiReply;
-    } else if (res && res.error) {
-      aiReply = `AI Error: ${res.error.message || JSON.stringify(res.error)}`;
-    } else if (typeof res === 'string' && res.trim().length > 0) {
-      aiReply = `API Response Error: ${res.substring(0, 150)}`;
-    } else {
-      aiReply = `API Error: Unexpected empty response payload.`;
+    const models = [
+      'meta-llama/llama-3-8b-instruct:free',
+    'mistralai/mistral-7b-instruct:free',
+    'google/gemma-2-9b-it:free',
+    'openchat/openchat-7b:free'
+  ];
+
+  let res: any = null;
+  let lastError = 'No models attempted';
+
+  for (const model of models) {
+    try {
+      const payload = {
+        model: model,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are Meta AI, a helpful, intelligent assistant integrated into a WhatsApp clone chat. Keep your answers clear, concise, and friendly. Use markdown formatting appropriately.'
+          },
+          ...chatHistory
+        ]
+      };
+      
+      const attemptRes = await httpsPost('https://openrouter.ai/api/v1/chat/completions', headers, payload);
+      if (attemptRes && attemptRes.choices && attemptRes.choices[0] && attemptRes.choices[0].message) {
+        res = attemptRes;
+        break;
+      } else if (attemptRes && attemptRes.error) {
+        lastError = attemptRes.error.message || JSON.stringify(attemptRes.error);
+        console.warn(`Model ${model} failed: ${lastError}`);
+      }
+    } catch (e: any) {
+      lastError = e.message || String(e);
+      console.warn(`Model ${model} request error: ${lastError}`);
     }
+  }
+
+  let aiReply = "I'm sorry, I couldn't generate a response.";
+  if (res && res.choices && res.choices[0] && res.choices[0].message) {
+    aiReply = res.choices[0].message.content || aiReply;
+  } else {
+    aiReply = `AI Error: ${lastError}`;
+  }
     
     // 4. Save AI response to database
     const messageId = uuidv4();
