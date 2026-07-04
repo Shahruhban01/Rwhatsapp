@@ -66,9 +66,8 @@ class ArchivedChatsScreen extends ConsumerWidget {
                 String title = 'Chat';
                 String subtitle = '';
                 if (chat.type == 'one_to_one') {
-                  final recipient = chat.metadata?['recipientProfile'];
-                  title = recipient?['name'] ?? 'WhatsApp User';
-                  subtitle = '@${recipient?['username'] ?? ''}';
+                  title = chat.metadata?['recipientName'] ?? 'WhatsApp User';
+                  subtitle = '@${chat.metadata?['recipientUsername'] ?? ''}';
                 } else {
                   title = chat.metadata?['groupName'] ?? 'Group Chat';
                   subtitle = 'Group';

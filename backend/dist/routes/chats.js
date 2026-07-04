@@ -1081,7 +1081,19 @@ async function generateAiResponse(chatId) {
     };
     try {
         const res = await httpsPost('https://openrouter.ai/api/v1/chat/completions', headers, payload);
-        const aiReply = res?.choices?.[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+        let aiReply = "I'm sorry, I couldn't generate a response.";
+        if (res && res.choices && res.choices[0] && res.choices[0].message) {
+            aiReply = res.choices[0].message.content || aiReply;
+        }
+        else if (res && res.error) {
+            aiReply = `AI Error: ${res.error.message || JSON.stringify(res.error)}`;
+        }
+        else if (typeof res === 'string' && res.trim().length > 0) {
+            aiReply = `API Response Error: ${res.substring(0, 150)}`;
+        }
+        else {
+            aiReply = `API Error: Unexpected empty response payload.`;
+        }
         // 4. Save AI response to database
         const messageId = (0, uuid_1.v4)();
         const now = admin.firestore.Timestamp.now();

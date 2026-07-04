@@ -329,8 +329,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                         // Resolve metadata
                         String title = 'Chat';
                         if (chat.type == 'one_to_one') {
-                          final recipient = chat.metadata?['recipientProfile'];
-                          title = recipient?['name'] ?? 'WhatsApp User';
+                          title = chat.metadata?['recipientName'] ?? 'WhatsApp User';
                         } else {
                           title = chat.metadata?['groupName'] ?? 'Group Chat';
                         }

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
@@ -167,26 +168,45 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(loading: true);
     try {
       final prefs = await SharedPreferences.getInstance();
+      final jwt = prefs.getString('jwt');
       final refreshToken = prefs.getString('refreshToken');
+      final userStr = prefs.getString('user');
 
-      if (refreshToken == null) {
-        state = state.copyWith(loading: false);
+      if (jwt != null && refreshToken != null && userStr != null) {
+        final userMap = jsonDecode(userStr);
+        final cachedUser = UserModel.fromJson(userMap);
+        state = AuthState(jwt: jwt, user: cachedUser, loading: false);
+        
+        // Background refresh in case token expired
+        _backgroundRefresh(refreshToken);
         return;
       }
 
-      // Hit refresh to get active JWT
-      final res = await _dio.post('/auth/refresh', data: {'refreshToken': refreshToken});
-      final jwtToken = res.data['jwt'];
-      await prefs.setString('jwt', jwtToken);
-
-      // Load profile details
-      final profileRes = await _dio.get('/profile');
-      final userModel = UserModel.fromJson(profileRes.data);
-
-      state = AuthState(jwt: jwtToken, user: userModel, loading: false);
+      state = state.copyWith(loading: false);
     } catch (e) {
       print('Silent login failed: $e');
       state = state.copyWith(loading: false);
+    }
+  }
+
+  Future<void> _backgroundRefresh(String refreshToken) async {
+    try {
+      final res = await _dio.post('/auth/refresh', data: {'refreshToken': refreshToken});
+      final resMap = res.data is String ? jsonDecode(res.data) : res.data;
+      final jwtToken = resMap['jwt'];
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('jwt', jwtToken);
+
+      final profileRes = await _dio.get('/profile');
+      final profileMap = profileRes.data is String ? jsonDecode(profileRes.data) : profileRes.data;
+      final userModel = UserModel.fromJson(profileMap);
+
+      await prefs.setString('user', jsonEncode(profileMap));
+
+      state = AuthState(jwt: jwtToken, user: userModel, loading: false);
+    } catch (e) {
+      print('Background token refresh failed: $e');
     }
   }
 
@@ -203,13 +223,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
         'platform': platform,
       });
 
-      final jwtToken = res.data['jwt'];
-      final refreshToken = res.data['refreshToken'];
-      final userJson = res.data['user'];
+      final resMap = res.data is String ? jsonDecode(res.data) : res.data;
+      final jwtToken = resMap['jwt'];
+      final refreshToken = resMap['refreshToken'];
+      final userJson = resMap['user'];
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('jwt', jwtToken);
       await prefs.setString('refreshToken', refreshToken);
+      await prefs.setString('user', jsonEncode(userJson));
 
       state = AuthState(
         jwt: jwtToken,
@@ -240,13 +262,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
         'platform': platform,
       });
 
-      final jwtToken = res.data['jwt'];
-      final refreshToken = res.data['refreshToken'];
-      final userJson = res.data['user'];
+      final resMap = res.data is String ? jsonDecode(res.data) : res.data;
+      final jwtToken = resMap['jwt'];
+      final refreshToken = resMap['refreshToken'];
+      final userJson = resMap['user'];
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('jwt', jwtToken);
       await prefs.setString('refreshToken', refreshToken);
+      await prefs.setString('user', jsonEncode(userJson));
 
       state = AuthState(
         jwt: jwtToken,
@@ -272,6 +296,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('jwt');
       await prefs.remove('refreshToken');
+      await prefs.remove('user');
       state = AuthState();
     }
   }

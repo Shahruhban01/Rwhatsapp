@@ -8,6 +8,7 @@ import 'features/auth/login_screen.dart';
 import 'features/auth/username_screen.dart';
 import 'features/auth/qr_scanner_screen.dart';
 import 'features/auth/linked_devices_screen.dart';
+import 'features/auth/splash_screen.dart';
 import 'features/chat/dashboard_screen.dart';
 import 'features/chat/chat_screen.dart';
 import 'features/profile/settings_screen.dart';
@@ -38,7 +39,7 @@ final routerProvider = Provider<GoRouter>((ref) {
   ref.onDispose(() => listenable.dispose());
 
   return GoRouter(
-    initialLocation: ref.read(authProvider).jwt != null ? '/dashboard' : '/login',
+    initialLocation: '/',
     refreshListenable: listenable,
     redirect: (context, state) {
       final authState = ref.read(authProvider);
@@ -56,6 +57,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
+      GoRoute(
+        path: '/',
+        builder: (context, state) => const SplashScreen(),
+      ),
       GoRoute(
         path: '/login',
         builder: (context, state) => const LoginScreen(),
