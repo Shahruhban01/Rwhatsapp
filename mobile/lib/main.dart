@@ -43,24 +43,14 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final authState = ref.read(authProvider);
       final loggedIn = authState.jwt != null;
-      final user = authState.user;
       final goingToLogin = state.matchedLocation == '/login';
 
-      // 1. If not logged in and not going to login page, send to login
       if (!loggedIn && !goingToLogin) {
         return '/login';
       }
 
-      // 2. If logged in but username is not configured, redirect to username setup
-      if (loggedIn) {
-        final hasNoUsername = user != null && user.username.isEmpty;
-        if (hasNoUsername && state.matchedLocation != '/setup-username') {
-          return '/setup-username';
-        }
-        // If already has username, don't let them stay on setup or login
-        if (!hasNoUsername && (goingToLogin || state.matchedLocation == '/setup-username')) {
-          return '/dashboard';
-        }
+      if (loggedIn && goingToLogin) {
+        return '/dashboard';
       }
 
       return null;

@@ -190,14 +190,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  Future<void> loginWithAccessKey(String accessKey) async {
+  Future<void> loginWithPin(String username, String pin) async {
     state = state.copyWith(loading: true);
     try {
       final deviceName = defaultTargetPlatform == TargetPlatform.android ? 'Android Phone' : 'iOS Device';
       final platform = defaultTargetPlatform == TargetPlatform.android ? 'android' : 'ios';
 
-      final res = await _dio.post('/auth/access-key', data: {
-        'accessKey': accessKey,
+      final res = await _dio.post('/auth/login-pin', data: {
+        'username': username,
+        'pin': pin,
         'deviceName': deviceName,
         'platform': platform,
       });
@@ -217,6 +218,43 @@ class AuthNotifier extends StateNotifier<AuthState> {
       );
     } on DioException catch (e) {
       final errMsg = e.response?.data['error'] ?? 'Login failed';
+      state = state.copyWith(loading: false, error: errMsg);
+      throw errMsg;
+    } catch (e) {
+      state = state.copyWith(loading: false, error: e.toString());
+      throw e.toString();
+    }
+  }
+
+  Future<void> registerWithPin(String username, String name, String pin) async {
+    state = state.copyWith(loading: true);
+    try {
+      final deviceName = defaultTargetPlatform == TargetPlatform.android ? 'Android Phone' : 'iOS Device';
+      final platform = defaultTargetPlatform == TargetPlatform.android ? 'android' : 'ios';
+
+      final res = await _dio.post('/auth/register-pin', data: {
+        'username': username,
+        'name': name,
+        'pin': pin,
+        'deviceName': deviceName,
+        'platform': platform,
+      });
+
+      final jwtToken = res.data['jwt'];
+      final refreshToken = res.data['refreshToken'];
+      final userJson = res.data['user'];
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('jwt', jwtToken);
+      await prefs.setString('refreshToken', refreshToken);
+
+      state = AuthState(
+        jwt: jwtToken,
+        user: UserModel.fromJson(userJson),
+        loading: false,
+      );
+    } on DioException catch (e) {
+      final errMsg = e.response?.data['error'] ?? 'Registration failed';
       state = state.copyWith(loading: false, error: errMsg);
       throw errMsg;
     } catch (e) {

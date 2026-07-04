@@ -75,35 +75,96 @@ router.get('/debug-firebase', async (req, res) => {
         return res.status(200).json({ error: 'Failed to parse JSON', details: err.message });
     }
 });
-// 1. POST /api/auth/access-key (Login with Access Key)
-router.post('/access-key', async (req, res) => {
-    const { accessKey, deviceName, platform } = req.body;
-    if (!accessKey) {
-        return res.status(400).json({ error: 'Access Key is required' });
+// 1a. POST /api/auth/register-pin (Register/Setup with Username, Name, and PIN)
+router.post('/register-pin', async (req, res) => {
+    const { username, name, pin, deviceName, platform } = req.body;
+    if (!username || !name || !pin) {
+        return res.status(400).json({ error: 'Username, Name, and PIN are required' });
     }
-    // Validate the access key
-    const correctAccessKey = process.env.ACCESS_KEY || 'my-whatsapp-secret-key';
-    if (accessKey !== correctAccessKey) {
-        return res.status(401).json({ error: 'Invalid Access Key' });
+    const normalizedUsername = username.toLowerCase().trim();
+    if (normalizedUsername.length < 3 || normalizedUsername.length > 20) {
+        return res.status(400).json({ error: 'Username must be 3-20 characters long' });
     }
     try {
-        // Look up existing user tied to this access key (stable login - same key = same user)
-        const accessKeyId = Buffer.from(accessKey).toString('base64');
-        const accessKeyRef = firebase_1.db.collection('accessKeys').doc(accessKeyId);
-        const accessKeyDoc = await accessKeyRef.get();
-        let userId;
-        let existingUserData = null;
-        if (accessKeyDoc.exists) {
-            // Existing user — retrieve their userId
-            userId = accessKeyDoc.data().userId;
-            const userDoc = await firebase_1.db.collection('users').doc(userId).get();
-            if (userDoc.exists) {
-                existingUserData = userDoc.data();
-            }
+        // Check username availability
+        const usernameDoc = await firebase_1.db.collection('usernames').doc(normalizedUsername).get();
+        if (usernameDoc.exists) {
+            return res.status(400).json({ error: 'Username is already taken' });
         }
-        else {
-            // First-time login — create a new user
-            userId = (0, uuid_1.v4)();
+        const userId = (0, uuid_1.v4)();
+        const sessionId = (0, uuid_1.v4)();
+        const pinHash = (0, crypto_1.createHash)('sha256').update(pin).digest('hex');
+        // Create JWT tokens
+        const jwtToken = (0, jwt_1.generateAccessToken)(userId, sessionId);
+        const refreshToken = (0, jwt_1.generateRefreshToken)(userId, sessionId);
+        const expiresAtDate = new Date();
+        expiresAtDate.setDate(expiresAtDate.getDate() + 30);
+        const session = {
+            sessionId,
+            userId,
+            refreshToken,
+            deviceName: deviceName || 'Unknown Device',
+            platform: platform || 'unknown',
+            ipAddress: req.ip || '0.0.0.0',
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            lastActiveAt: admin.firestore.FieldValue.serverTimestamp(),
+            expiresAt: admin.firestore.Timestamp.fromDate(expiresAtDate),
+            isActive: true,
+        };
+        const newUser = {
+            userId,
+            username: normalizedUsername,
+            name: name.trim(),
+            about: 'Hey there! I am using WhatsApp.',
+            profilePhotoUrl: null,
+            blockedUserIds: [],
+            pinHash,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+        const batch = firebase_1.db.batch();
+        batch.set(firebase_1.db.collection('sessions').doc(sessionId), session);
+        batch.set(firebase_1.db.collection('users').doc(userId), newUser);
+        batch.set(firebase_1.db.collection('usernames').doc(normalizedUsername), { userId, username: normalizedUsername });
+        await batch.commit();
+        return res.status(201).json({
+            jwt: jwtToken,
+            refreshToken,
+            user: {
+                userId: newUser.userId,
+                username: newUser.username,
+                name: newUser.name,
+                about: newUser.about,
+                profilePhotoUrl: newUser.profilePhotoUrl,
+            }
+        });
+    }
+    catch (err) {
+        console.error('Error during register-pin:', err);
+        return res.status(500).json({ error: 'Internal server error during registration' });
+    }
+});
+// 1b. POST /api/auth/login-pin (Login with Username and PIN)
+router.post('/login-pin', async (req, res) => {
+    const { username, pin, deviceName, platform } = req.body;
+    if (!username || !pin) {
+        return res.status(400).json({ error: 'Username and PIN are required' });
+    }
+    const normalizedUsername = username.toLowerCase().trim();
+    try {
+        const usernameDoc = await firebase_1.db.collection('usernames').doc(normalizedUsername).get();
+        if (!usernameDoc.exists) {
+            return res.status(401).json({ error: 'Invalid username or PIN' });
+        }
+        const userId = usernameDoc.data().userId;
+        const userDoc = await firebase_1.db.collection('users').doc(userId).get();
+        if (!userDoc.exists) {
+            return res.status(404).json({ error: 'User profile not found' });
+        }
+        const userData = userDoc.data();
+        const pinHash = (0, crypto_1.createHash)('sha256').update(pin).digest('hex');
+        if (userData.pinHash !== pinHash) {
+            return res.status(401).json({ error: 'Invalid username or PIN' });
         }
         const sessionId = (0, uuid_1.v4)();
         // Create JWT tokens
@@ -125,51 +186,24 @@ router.post('/access-key', async (req, res) => {
         };
         const batch = firebase_1.db.batch();
         batch.set(firebase_1.db.collection('sessions').doc(sessionId), session);
-        let userPayload;
-        if (existingUserData) {
-            // Returning user — just update lastActiveAt on their profile
-            batch.update(firebase_1.db.collection('users').doc(userId), {
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            });
-            userPayload = {
-                userId: existingUserData.userId,
-                username: existingUserData.username || '',
-                name: existingUserData.name,
-                about: existingUserData.about,
-                profilePhotoUrl: existingUserData.profilePhotoUrl,
-            };
-        }
-        else {
-            // New user — create user doc + accessKey mapping
-            const newUser = {
-                userId,
-                username: '',
-                name: deviceName ? `User (${deviceName})` : 'New User',
-                about: 'Hey there! I am using WhatsApp.',
-                profilePhotoUrl: null,
-                blockedUserIds: [],
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            };
-            batch.set(firebase_1.db.collection('users').doc(userId), newUser);
-            batch.set(accessKeyRef, { userId, createdAt: admin.firestore.FieldValue.serverTimestamp() });
-            userPayload = {
-                userId: newUser.userId,
-                username: newUser.username,
-                name: newUser.name,
-                about: newUser.about,
-                profilePhotoUrl: newUser.profilePhotoUrl,
-            };
-        }
+        batch.update(firebase_1.db.collection('users').doc(userId), {
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
         await batch.commit();
         return res.status(200).json({
             jwt: jwtToken,
             refreshToken,
-            user: userPayload,
+            user: {
+                userId: userData.userId,
+                username: userData.username,
+                name: userData.name,
+                about: userData.about || 'Hey there! I am using WhatsApp.',
+                profilePhotoUrl: userData.profilePhotoUrl || null,
+            }
         });
     }
     catch (err) {
-        console.error('Error creating user/session:', err);
+        console.error('Error during login-pin:', err);
         return res.status(500).json({ error: 'Internal server error during login' });
     }
 });
