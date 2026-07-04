@@ -45,8 +45,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       final authState = ref.read(authProvider);
       final loggedIn = authState.jwt != null;
       final goingToLogin = state.matchedLocation == '/login';
+      final goingToSplash = state.matchedLocation == '/';
 
-      if (!loggedIn && !goingToLogin) {
+      if (!loggedIn && !goingToLogin && !goingToSplash) {
         return '/login';
       }
 

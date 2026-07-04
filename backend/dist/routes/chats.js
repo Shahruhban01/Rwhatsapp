@@ -1071,6 +1071,9 @@ async function generateAiResponse(chatId) {
     try {
         const models = [
             'meta-llama/llama-3-8b-instruct:free',
+            'meta-llama/llama-3.1-8b-instruct:free',
+            'meta-llama/llama-3.3-70b-instruct:free',
+            'qwen/qwen-2.5-7b-instruct:free',
             'mistralai/mistral-7b-instruct:free',
             'google/gemma-2-9b-it:free',
             'openchat/openchat-7b:free'

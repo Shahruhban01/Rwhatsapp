@@ -43,7 +43,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
               children: [
                 // WhatsApp iconic brand icon logo
                 Image.network(
-                  'https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg',
+                  'https://developerruhban.space/Apps/files/whatsapp.png',
                   width: 80,
                   height: 80,
                   color: const Color(0xFF00A884),
@@ -83,7 +83,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'META',
+                    'RUHBAN',
                     style: TextStyle(
                       color: Color(0xFF00A884),
                       fontSize: 15,
