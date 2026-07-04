@@ -72,7 +72,7 @@ class _StatusPreviewScreenState extends ConsumerState<StatusPreviewScreen> {
             child: InteractiveViewer(
               child: Image.file(
                 File(widget.imagePath),
-                fit: BoxFit.contain,
+                fit: BoxFit.cover,
               ),
             ),
           ),

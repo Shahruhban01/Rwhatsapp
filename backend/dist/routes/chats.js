@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const uuid_1 = require("uuid");
 const admin = __importStar(require("firebase-admin"));
+const https = __importStar(require("https"));
 const firebase_1 = require("../config/firebase");
 const auth_1 = require("../middlewares/auth");
 const router = (0, express_1.Router)();
@@ -77,6 +78,23 @@ router.post('/', auth_1.requireAuth, async (req, res) => {
     }
     recipientUsername = recipientUsername.toLowerCase();
     try {
+        if (recipientUsername === 'meta_ai') {
+            const metaAiDoc = await firebase_1.db.collection('users').doc('meta_ai').get();
+            if (!metaAiDoc.exists) {
+                await firebase_1.db.collection('users').doc('meta_ai').set({
+                    userId: 'meta_ai',
+                    username: 'meta_ai',
+                    name: 'Meta AI',
+                    profilePhotoUrl: null,
+                    about: 'WhatsApp\'s AI Assistant',
+                    createdAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+                await firebase_1.db.collection('usernames').doc('meta_ai').set({
+                    userId: 'meta_ai',
+                    username: 'meta_ai'
+                });
+            }
+        }
         // 1. Resolve recipient username to userId
         const usernameDoc = await firebase_1.db.collection('usernames').doc(recipientUsername).get();
         if (!usernameDoc.exists) {
@@ -241,6 +259,16 @@ router.post('/:chatId/messages', auth_1.requireAuth, async (req, res) => {
             lastMessageAt: now
         });
         await batch.commit();
+        if (chatData.participantIds.includes('meta_ai')) {
+            setTimeout(async () => {
+                try {
+                    await generateAiResponse(chatId);
+                }
+                catch (err) {
+                    console.error('Error generating AI response:', err);
+                }
+            }, 500);
+        }
         return res.status(200).json({
             success: true,
             messageId: resolvedMessageId,
@@ -981,3 +1009,120 @@ router.post('/:chatId/unarchive', auth_1.requireAuth, async (req, res) => {
     }
 });
 exports.default = router;
+function httpsPost(url, headers, data) {
+    return new Promise((resolve, reject) => {
+        const urlObj = new URL(url);
+        const postData = JSON.stringify(data);
+        const options = {
+            hostname: urlObj.hostname,
+            path: urlObj.pathname + urlObj.search,
+            method: 'POST',
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(postData)
+            }
+        };
+        const req = https.request(options, (res) => {
+            let body = '';
+            res.on('data', (chunk) => body += chunk);
+            res.on('end', () => {
+                try {
+                    resolve(JSON.parse(body));
+                }
+                catch (e) {
+                    resolve(body);
+                }
+            });
+        });
+        req.on('error', (e) => reject(e));
+        req.write(postData);
+        req.end();
+    });
+}
+async function generateAiResponse(chatId) {
+    // 1. Fetch last 15 messages from Firestore to construct conversation context
+    const messagesSnap = await firebase_1.db.collection('messages')
+        .doc(chatId)
+        .collection('chatMessages')
+        .orderBy('sentAt', 'desc')
+        .limit(15)
+        .get();
+    const rawMessages = [];
+    messagesSnap.forEach(doc => rawMessages.push(doc.data()));
+    // Reverse to get chronological order
+    rawMessages.reverse();
+    // 2. Map messages to OpenRouter expected format
+    const chatHistory = rawMessages.map((m) => ({
+        role: m.senderId === 'meta_ai' ? 'assistant' : 'user',
+        content: m.content || ''
+    }));
+    // 3. Make request to OpenRouter using free key / free model
+    const openRouterKey = process.env.OPENROUTER_API_KEY || '';
+    if (!openRouterKey) {
+        console.error('Missing OPENROUTER_API_KEY environment variable.');
+        return;
+    }
+    const model = 'google/gemma-2-9b-it:free';
+    const payload = {
+        model: model,
+        messages: [
+            {
+                role: 'system',
+                content: 'You are Meta AI, a helpful, intelligent assistant integrated into a WhatsApp clone chat. Keep your answers clear, concise, and friendly. Use markdown formatting appropriately.'
+            },
+            ...chatHistory
+        ]
+    };
+    const headers = {
+        'Authorization': `Bearer ${openRouterKey}`,
+        'HTTP-Referer': 'https://github.com/Shahruhban01/Rwhatsapp',
+        'X-Title': 'WhatsApp Clone AI'
+    };
+    try {
+        const res = await httpsPost('https://openrouter.ai/api/v1/chat/completions', headers, payload);
+        const aiReply = res?.choices?.[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+        // 4. Save AI response to database
+        const messageId = (0, uuid_1.v4)();
+        const now = admin.firestore.Timestamp.now();
+        const aiMessage = {
+            messageId,
+            chatId,
+            senderId: 'meta_ai',
+            type: 'text',
+            content: aiReply,
+            mediaUrl: null,
+            mediaThumbnailUrl: null,
+            mediaSize: null,
+            mediaName: null,
+            mediaDuration: null,
+            replyTo: null,
+            isEdited: false,
+            isDeletedForEveryone: false,
+            isPinned: false,
+            status: 'sent',
+            sentAt: now,
+            deliveredAt: null,
+            readAt: null
+        };
+        const batch = firebase_1.db.batch();
+        const messageDocRef = firebase_1.db.collection('messages').doc(chatId).collection('chatMessages').doc(messageId);
+        batch.set(messageDocRef, aiMessage);
+        const chatDocRef = firebase_1.db.collection('chats').doc(chatId);
+        batch.update(chatDocRef, {
+            lastMessage: {
+                messageId,
+                senderId: 'meta_ai',
+                content: aiReply,
+                type: 'text',
+                timestamp: now,
+                status: 'sent'
+            },
+            lastMessageAt: now
+        });
+        await batch.commit();
+    }
+    catch (err) {
+        console.error('OpenRouter request error:', err);
+    }
+}

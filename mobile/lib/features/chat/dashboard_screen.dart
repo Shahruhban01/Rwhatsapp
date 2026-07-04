@@ -21,6 +21,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   int _currentTab = 0;
   final _searchController = TextEditingController();
   String _searchQuery = '';
+  String _selectedFilter = 'All';
 
   @override
   void initState() {
@@ -98,6 +99,95 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
+  Widget _buildFilterPill(String filterName) {
+    final isActive = _selectedFilter == filterName;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedFilter = filterName;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        margin: const EdgeInsets.only(right: 8),
+        decoration: BoxDecoration(
+          color: isActive ? const Color(0xFF103629) : const Color(0xFF202C33),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Text(
+          filterName,
+          style: TextStyle(
+            color: isActive ? const Color(0xFF25D366) : const Color(0xFF8696A0),
+            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+            fontSize: 13,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMessageSubtitle(ChatModel chat, UserModel currentUser) {
+    if (chat.lastMessage == null) {
+      return const Text(
+        'No messages yet',
+        style: TextStyle(fontSize: 13, color: Color(0xFF8696A0)),
+      );
+    }
+
+    final msg = chat.lastMessage!;
+    final isMe = msg['senderId'] == currentUser.userId;
+    final isRead = msg['status'] == 'read';
+    final isDelivered = msg['status'] == 'delivered';
+    final hasUnread = !isMe && !isRead;
+
+    Widget? statusIcon;
+    if (isMe) {
+      statusIcon = Padding(
+        padding: const EdgeInsets.only(right: 4.0),
+        child: Icon(
+          isRead ? Icons.done_all : (isDelivered ? Icons.done_all : Icons.done),
+          size: 16,
+          color: isRead ? const Color(0xFF53BDEB) : const Color(0xFF8696A0),
+        ),
+      );
+    }
+
+    Widget? typeIcon;
+    String text = msg['content'] ?? '';
+    if (msg['type'] == 'image') {
+      typeIcon = const Padding(
+        padding: EdgeInsets.only(right: 4.0),
+        child: Icon(Icons.photo, size: 16, color: Color(0xFF8696A0)),
+      );
+      text = 'Photo';
+    } else if (msg['type'] == 'audio' || text.toLowerCase().contains('voice call')) {
+      typeIcon = const Padding(
+        padding: EdgeInsets.only(right: 4.0),
+        child: Icon(Icons.phone_callback, size: 16, color: Color(0xFF8696A0)),
+      );
+      text = 'Voice call';
+    }
+
+    return Row(
+      children: [
+        if (statusIcon != null) statusIcon,
+        if (typeIcon != null) typeIcon,
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 13,
+              color: hasUnread ? const Color(0xFFE9EDEF) : const Color(0xFF8696A0),
+              fontWeight: hasUnread ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildChatsTab(ChatState chatState, UserModel? currentUser) {
     if (currentUser == null) return const Center(child: Text('Unauthorized'));
 
@@ -106,8 +196,22 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       return !chat.archivedByUserIds.contains(currentUser.userId);
     }).toList();
 
+    // Apply main category filter pills selection
+    var displayChats = activeChats;
+    if (_selectedFilter == 'Unread') {
+      displayChats = displayChats.where((chat) {
+        return chat.lastMessage != null &&
+            chat.lastMessage!['senderId'] != currentUser.userId &&
+            chat.lastMessage!['status'] != 'read';
+      }).toList();
+    } else if (_selectedFilter == 'Groups') {
+      displayChats = displayChats.where((chat) => chat.type != 'one_to_one').toList();
+    } else if (_selectedFilter == 'Favourites') {
+      displayChats = displayChats.where((chat) => chat.metadata?['isPinned'] == true || chat.metadata?['isFavourite'] == true).toList();
+    }
+
     // Filter by search query
-    final filteredChats = activeChats.where((chat) {
+    final filteredChats = displayChats.where((chat) {
       String name = 'Chat';
       if (chat.type == 'one_to_one') {
         final recipient = chat.metadata?['recipientProfile'];
@@ -126,12 +230,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       children: [
         // Search bar
         Padding(
-          padding: const EdgeInsets.all(10.0),
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: TextField(
             controller: _searchController,
             style: const TextStyle(color: Color(0xFFE9EDEF)),
             decoration: InputDecoration(
-              hintText: 'Search chats...',
+              hintText: 'Search...',
               hintStyle: const TextStyle(color: Color(0xFF8696A0)),
               prefixIcon: const Icon(Icons.search, color: Color(0xFF8696A0)),
               filled: true,
@@ -145,20 +249,49 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ),
         ),
 
+        // Filter pills row
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildFilterPill('All'),
+                _buildFilterPill('Unread'),
+                _buildFilterPill('Groups'),
+                _buildFilterPill('Favourites'),
+                GestureDetector(
+                  onTap: () {},
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF202C33),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.add, color: Color(0xFF8696A0), size: 18),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 8),
+
         // Archived row
         if (archivedCount > 0)
           ListTile(
             leading: const Padding(
               padding: EdgeInsets.symmetric(horizontal: 4.0),
-              child: Icon(Icons.archive_outlined, color: Color(0xFF00A884)),
+              child: Icon(Icons.archive_outlined, color: Color(0xFF8696A0), size: 24),
             ),
             title: const Text(
               'Archived',
-              style: TextStyle(color: Color(0xFFE9EDEF), fontWeight: FontWeight.bold),
+              style: TextStyle(color: Color(0xFFE9EDEF), fontWeight: FontWeight.bold, fontSize: 15),
             ),
             trailing: Text(
               '$archivedCount',
-              style: const TextStyle(color: Color(0xFF00A884), fontWeight: FontWeight.bold, fontSize: 13),
+              style: const TextStyle(color: Color(0xFF25D366), fontWeight: FontWeight.bold, fontSize: 13),
             ),
             onTap: () => context.push('/archived-chats'),
           ),
@@ -191,21 +324,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                             chat.lastMessage!['senderId'] != currentUser.userId &&
                             chat.lastMessage!['status'] != 'read';
 
+                        final isPinned = chat.metadata?['isPinned'] == true;
+
                         // Resolve metadata
                         String title = 'Chat';
-                        String subtitle = 'No messages yet';
                         if (chat.type == 'one_to_one') {
                           final recipient = chat.metadata?['recipientProfile'];
                           title = recipient?['name'] ?? 'WhatsApp User';
                         } else {
                           title = chat.metadata?['groupName'] ?? 'Group Chat';
-                        }
-
-                        if (chat.lastMessage != null) {
-                          subtitle = chat.lastMessage!['content'] ?? '';
-                          if (chat.lastMessage!['type'] != 'text') {
-                            subtitle = '[${chat.lastMessage!['type']}]';
-                          }
                         }
 
                         return ListTile(
@@ -226,35 +353,38 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                             title,
                             style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFFE9EDEF)),
                           ),
-                          subtitle: Text(
-                            subtitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: hasUnread ? const Color(0xFFE9EDEF) : const Color(0xFF8696A0),
-                              fontWeight: hasUnread ? FontWeight.bold : FontWeight.normal,
-                            ),
-                          ),
+                          subtitle: _buildMessageSubtitle(chat, currentUser),
                           trailing: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Text(
                                 _formatTime(chat.lastMessageAt),
-                                style: const TextStyle(fontSize: 11, color: Color(0xFF8696A0)),
-                              ),
-                              if (hasUnread) ...[
-                                const SizedBox(height: 6),
-                                Container(
-                                  width: 10,
-                                  height: 10,
-                                  decoration: const BoxDecoration(
-                                    color: Color(0xFF00A884),
-                                    shape: BoxShape.circle,
-                                  ),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: hasUnread ? const Color(0xFF25D366) : const Color(0xFF8696A0),
                                 ),
-                              ],
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (isPinned)
+                                    const Padding(
+                                      padding: EdgeInsets.only(right: 6.0),
+                                      child: Icon(Icons.push_pin, size: 16, color: Color(0xFF8696A0)),
+                                    ),
+                                  if (hasUnread)
+                                    Container(
+                                      width: 10,
+                                      height: 10,
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFF25D366),
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ],
                           ),
                         );
@@ -556,13 +686,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         body = _buildChatsTab(chatState, currentUser);
         break;
       case 1:
-        body = _buildUpdatesTab(statusState, currentUser);
+        body = _buildCallsTab();
         break;
       case 2:
-        body = _buildCommunitiesTab();
+        body = _buildUpdatesTab(statusState, currentUser);
         break;
       case 3:
-        body = _buildCallsTab();
+        body = _buildCommunitiesTab();
         break;
       default:
         body = const SizedBox();
@@ -571,12 +701,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0B141A),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF202C33),
-        title: const Text('WhatsApp', style: TextStyle(color: Color(0xFFE9EDEF), fontWeight: FontWeight.bold, fontSize: 20)),
+        backgroundColor: const Color(0xFF0B141A),
+        elevation: 0,
+        title: const Text(
+          'WhatsApp',
+          style: TextStyle(
+            color: Color(0xFFE9EDEF),
+            fontWeight: FontWeight.bold,
+            fontSize: 22,
+          ),
+        ),
         actions: [
           IconButton(
             onPressed: () => context.push('/link-device'),
-            icon: const Icon(Icons.qr_code_scanner, color: Color(0xFFE9EDEF)),
+            icon: const Icon(Icons.camera_alt_outlined, color: Color(0xFFE9EDEF)),
             tooltip: 'Link Web Device',
           ),
           PopupMenuButton<String>(
@@ -667,6 +805,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               selectedIcon: const Icon(Icons.chat_bubble),
               label: 'Chats',
             ),
+            const NavigationDestination(
+              icon: Icon(Icons.call_outlined),
+              selectedIcon: Icon(Icons.call),
+              label: 'Calls',
+            ),
             NavigationDestination(
               icon: hasUnviewedStatus
                   ? const Badge(
@@ -678,36 +821,73 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               label: 'Updates',
             ),
             const NavigationDestination(
-              icon: Icon(Icons.groups_outlined),
-              selectedIcon: Icon(Icons.groups),
-              label: 'Communities',
-            ),
-            const NavigationDestination(
-              icon: Icon(Icons.call_outlined),
-              selectedIcon: Icon(Icons.call),
-              label: 'Calls',
+              icon: Icon(Icons.storefront_outlined),
+              selectedIcon: Icon(Icons.storefront),
+              label: 'Tools',
             ),
           ],
         ),
       ),
       floatingActionButton: _currentTab == 0
-          ? FloatingActionButton(
-              heroTag: 'chats_message_fab',
-              onPressed: () async {
-                final resultChatId = await showDialog<String>(
-                  context: context,
-                  builder: (context) => const SearchUserDialog(),
-                );
+          ? Column(
+              mainAxisAlignment: MainAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: SweepGradient(
+                      colors: [
+                        Color(0xFF3F51B5),
+                        Color(0xFF00BCD4),
+                        Color(0xFF9C27B0),
+                        Color(0xFF3F51B5),
+                      ],
+                    ),
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.circle_notifications_outlined, color: Colors.white, size: 24),
+                    onPressed: () async {
+                      try {
+                        final chatId = await ref.read(chatProvider.notifier).startChatWithUser('meta_ai');
+                        if (context.mounted) {
+                          context.push('/chat/$chatId');
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Failed to start Meta AI: $e'), backgroundColor: Colors.redAccent),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(height: 12),
+                FloatingActionButton(
+                  heroTag: 'chats_message_fab',
+                  onPressed: () async {
+                    final resultChatId = await showDialog<String>(
+                      context: context,
+                      builder: (context) => const SearchUserDialog(),
+                    );
 
-                if (resultChatId != null && context.mounted) {
-                  context.push('/chat/$resultChatId');
-                }
-              },
-              backgroundColor: const Color(0xFF00A884),
-              foregroundColor: Colors.white,
-              child: const Icon(Icons.message),
+                    if (resultChatId != null && context.mounted) {
+                      context.push('/chat/$resultChatId');
+                    }
+                  },
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(Icons.add_comment),
+                ),
+              ],
             )
-          : _currentTab == 1
+          : _currentTab == 2
               ? Column(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
